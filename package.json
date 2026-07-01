@@ -14,7 +14,17 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate.mjs",
     "db:studio": "drizzle-kit studio",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "nuxt typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=26"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.0",
@@ -29,10 +39,16 @@
   },
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.115",
+    "@nuxt/eslint": "^1.16.0",
     "@types/better-sqlite3": "^7.6.13",
     "@vite-pwa/nuxt": "^1.1.1",
     "drizzle-kit": "^0.31.10",
+    "eslint": "^10.6.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.4",
     "sharp": "^0.35.3",
-    "tsx": "^4.22.4"
+    "tsx": "^4.22.4",
+    "vitest": "^4.1.9",
+    "vue-tsc": "^3.3.6"
   }
 }

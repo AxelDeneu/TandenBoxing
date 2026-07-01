@@ -1,0 +1,11 @@
+.nuxt
+.output
+.nitro
+.cache
+.data
+node_modules
+dist
+drizzle
+data
+public
+package-lock.json

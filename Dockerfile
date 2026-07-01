@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # --- Stage build ---
-FROM node:24-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 WORKDIR /app
 
 # Outils pour compiler better-sqlite3 si aucun prebuilt n'est disponible.
@@ -15,7 +15,7 @@ COPY . .
 RUN npm run build
 
 # --- Stage runtime ---
-FROM node:24-bookworm-slim AS runtime
+FROM node:26-bookworm-slim AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production \
