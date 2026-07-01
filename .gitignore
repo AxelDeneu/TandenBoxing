@@ -1,0 +1,39 @@
+# Nuxt
+.nuxt
+.output
+.data
+dist
+.nitro
+.cache
+
+# Dependencies
+node_modules
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Database (SQLite) — keep the folder, ignore the data
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.sqlite
+
+# Drizzle
+drizzle/meta/_journal.json.bak
+
+# Misc
+.DS_Store
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# Playwright MCP
+.playwright-mcp
+*.png

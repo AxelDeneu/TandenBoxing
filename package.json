@@ -1,0 +1,38 @@
+{
+  "name": "tanden-boxing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Coach de boxe à domicile — séances quotidiennes générées par IA, timer à intervalles et suivi de progression.",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "generate": "nuxt generate",
+    "prepare": "nuxt prepare",
+    "start": "node .output/server/index.mjs",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:studio": "drizzle-kit studio",
+    "icons": "node scripts/generate-icons.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.109.0",
+    "@nuxt/ui": "^4.9.0",
+    "better-sqlite3": "^12.11.1",
+    "chart.js": "^4.5.1",
+    "croner": "^10.0.1",
+    "drizzle-orm": "^0.45.2",
+    "nuxt": "^4.4.8",
+    "vue-chartjs": "^5.3.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@iconify-json/lucide": "^1.2.115",
+    "@types/better-sqlite3": "^7.6.13",
+    "@vite-pwa/nuxt": "^1.1.1",
+    "drizzle-kit": "^0.31.10",
+    "sharp": "^0.35.3",
+    "tsx": "^4.22.4"
+  }
+}

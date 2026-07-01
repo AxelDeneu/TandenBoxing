@@ -1,0 +1,17 @@
+node_modules
+.nuxt
+.output
+.nitro
+.cache
+.git
+.gitignore
+data
+.env
+.env.*
+!.env.example
+*.log
+*.md
+.DS_Store
+.idea
+.vscode
+.playwright-mcp

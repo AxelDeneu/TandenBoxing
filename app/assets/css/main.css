@@ -1,0 +1,21 @@
+@import 'tailwindcss';
+@import '@nuxt/ui';
+
+/* Palette Tanden : sombre, énergique, orientée entraînement matinal. */
+:root {
+  --ui-radius: 0.75rem;
+}
+
+html,
+body {
+  min-height: 100dvh;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Évite le zoom iOS sur les inputs et respecte les safe-areas mobiles. */
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}

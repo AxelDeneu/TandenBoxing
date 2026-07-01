@@ -1,0 +1,19 @@
+services:
+  tanden-boxing:
+    build: .
+    image: tanden-boxing
+    container_name: tanden-boxing
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      # Obligatoire — clé API Anthropic (jamais commitée).
+      NUXT_ANTHROPIC_API_KEY: ${NUXT_ANTHROPIC_API_KEY:?Renseigne NUXT_ANTHROPIC_API_KEY}
+      NUXT_AI_MODEL: ${NUXT_AI_MODEL:-claude-opus-4-8}
+      NUXT_TIMEZONE: ${NUXT_TIMEZONE:-Europe/Paris}
+      NUXT_DATABASE_PATH: /app/data/tanden.db
+    volumes:
+      - tanden-data:/app/data
+
+volumes:
+  tanden-data:
