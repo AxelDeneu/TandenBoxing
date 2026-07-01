@@ -1,12 +1,4 @@
-const WEEKDAYS_FR = [
-  'lundi',
-  'mardi',
-  'mercredi',
-  'jeudi',
-  'vendredi',
-  'samedi',
-  'dimanche',
-]
+const WEEKDAYS_FR = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche']
 
 const MONTHS_FR = [
   'janvier',
@@ -80,4 +72,11 @@ export function formatDuration(totalSeconds: number): string {
 /** Capitalise la première lettre. */
 export function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** Décale une date ISO (YYYY-MM-DD) de `days` jours. */
+export function addDaysIso(dateIso: string, days: number): string {
+  const d = new Date(`${dateIso}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
 }

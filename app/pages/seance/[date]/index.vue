@@ -20,6 +20,7 @@ const { data, error } = await useFetch<SessionDetail>(`/api/sessions/${date}`)
 useHead({ title: () => data.value?.structure.title ?? 'Séance' })
 
 const totalSeconds = computed(() => (data.value ? estimateSessionSeconds(data.value.structure) : 0))
+const showReschedule = ref(false)
 </script>
 
 <template>
@@ -88,20 +89,33 @@ const totalSeconds = computed(() => (data.value ? estimateSessionSeconds(data.va
         </template>
         <div class="grid grid-cols-3 gap-3 text-center">
           <div>
-            <p class="text-lg font-bold">{{ data.feedback.overallDifficulty ?? '—' }}<span class="text-sm text-dimmed">/5</span></p>
+            <p class="text-lg font-bold">
+              {{ data.feedback.overallDifficulty ?? '—'
+              }}<span class="text-sm text-dimmed">/5</span>
+            </p>
             <p class="text-xs text-muted">Difficulté</p>
           </div>
           <div>
-            <p class="text-lg font-bold">{{ data.feedback.energyLevel ?? '—' }}<span class="text-sm text-dimmed">/5</span></p>
+            <p class="text-lg font-bold">
+              {{ data.feedback.energyLevel ?? '—' }}<span class="text-sm text-dimmed">/5</span>
+            </p>
             <p class="text-xs text-muted">Énergie</p>
           </div>
           <div>
-            <p class="text-lg font-bold">{{ data.feedback.enjoyment ?? '—' }}<span class="text-sm text-dimmed">/5</span></p>
+            <p class="text-lg font-bold">
+              {{ data.feedback.enjoyment ?? '—' }}<span class="text-sm text-dimmed">/5</span>
+            </p>
             <p class="text-xs text-muted">Plaisir</p>
           </div>
         </div>
         <div v-if="data.feedback.soreness?.length" class="mt-3 flex flex-wrap gap-1.5">
-          <UBadge v-for="z in data.feedback.soreness" :key="z" color="neutral" variant="soft" size="sm">
+          <UBadge
+            v-for="z in data.feedback.soreness"
+            :key="z"
+            color="neutral"
+            variant="soft"
+            size="sm"
+          >
             {{ z }}
           </UBadge>
         </div>
@@ -130,6 +144,22 @@ const totalSeconds = computed(() => (data.value ? estimateSessionSeconds(data.va
       >
         {{ data.status === 'completed' ? 'Refaire la séance' : 'Démarrer la séance' }}
       </UButton>
+
+      <UButton
+        block
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-calendar-clock"
+        @click="showReschedule = true"
+      >
+        Reporter à une autre date
+      </UButton>
+
+      <RescheduleModal
+        v-model:open="showReschedule"
+        :date="data.date"
+        @done="() => navigateTo('/historique')"
+      />
     </template>
   </div>
 </template>

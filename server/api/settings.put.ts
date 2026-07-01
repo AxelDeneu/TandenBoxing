@@ -1,10 +1,12 @@
-import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 const schema = z
   .object({
     trainingDays: z.array(z.number().int().min(1).max(7)).min(1).optional(),
-    generationTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+    generationTime: z
+      .string()
+      .regex(/^\d{2}:\d{2}$/)
+      .optional(),
     targetDurationMin: z.number().int().min(10).max(120).optional(),
     timezone: z.string().min(1).max(64).optional(),
     aiModel: z.string().min(1).max(64).optional(),
@@ -25,12 +27,7 @@ export default defineEventHandler(async (event) => {
     patch.trainingDays = [...new Set(patch.trainingDays)].sort((a, b) => a - b)
   }
 
-  const db = useDatabase()
-  ensureSingletons(db)
-  db.update(settings)
-    .set({ ...patch, updatedAt: new Date() })
-    .where(eq(settings.id, 1))
-    .run()
+  const updated = updateSettings(patch)
 
   // Replanifie le cron si l'heure ou le fuseau a changé.
   const { disableCron } = useRuntimeConfig()
@@ -38,5 +35,5 @@ export default defineEventHandler(async (event) => {
     scheduleGeneration()
   }
 
-  return db.select().from(settings).where(eq(settings.id, 1)).get()!
+  return updated
 })

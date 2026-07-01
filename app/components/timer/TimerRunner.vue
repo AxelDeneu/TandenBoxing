@@ -124,7 +124,9 @@ function restart() {
           />
         </svg>
         <div class="absolute flex flex-col items-center">
-          <span class="font-mono text-7xl font-bold tabular-nums">{{ formatClock(remaining) }}</span>
+          <span class="font-mono text-7xl font-bold tabular-nums">{{
+            formatClock(remaining)
+          }}</span>
           <span v-if="current?.round" class="mt-1 text-sm opacity-70">
             Round {{ current.round }}/{{ current.totalRounds }}
           </span>

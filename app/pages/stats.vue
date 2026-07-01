@@ -32,7 +32,11 @@ const weeklyOptions = {
   ...baseOptions,
   scales: {
     ...baseOptions.scales,
-    y: { ...baseOptions.scales.y, beginAtZero: true, ticks: { ...baseOptions.scales.y.ticks, precision: 0 } },
+    y: {
+      ...baseOptions.scales.y,
+      beginAtZero: true,
+      ticks: { ...baseOptions.scales.y.ticks, precision: 0 },
+    },
   },
 }
 
@@ -110,7 +114,9 @@ async function saveWeight() {
         <div class="rounded-xl border border-default p-4">
           <div class="flex items-center gap-2 text-primary">
             <UIcon name="i-lucide-calendar-check" class="size-5" />
-            <span class="text-2xl font-bold">{{ stats.thisWeekCount }}/{{ stats.weeklyTarget }}</span>
+            <span class="text-2xl font-bold"
+              >{{ stats.thisWeekCount }}/{{ stats.weeklyTarget }}</span
+            >
           </div>
           <p class="mt-1 text-xs text-muted">Cette semaine</p>
         </div>

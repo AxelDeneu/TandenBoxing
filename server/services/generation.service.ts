@@ -1,8 +1,6 @@
 import type AnthropicSDK from '@anthropic-ai/sdk'
-import { desc, eq, gte, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import {
-  estimateSessionSeconds,
   exerciseSchema,
   workoutSessionSchema,
   type Exercise,
@@ -10,12 +8,21 @@ import {
 } from '../../shared/session-schema'
 import type { NewSession, Session } from '../database/schema'
 
-/** Outil de sortie structurée imposé au modèle. */
+/** Outil de sortie structurée imposé au modèle pour une séance complète. */
 const SESSION_TOOL = {
   name: 'proposer_seance',
   description:
-    "Renvoie la séance de boxe du jour, entièrement structurée (blocs, exercices, intervalles) et prête à être exécutée.",
+    'Renvoie la séance de boxe du jour, entièrement structurée (blocs, exercices, intervalles) et prête à être exécutée.',
   input_schema: z.toJSONSchema(workoutSessionSchema, {
+    target: 'draft-2020-12',
+  }) as AnthropicSDK.Tool.InputSchema,
+}
+
+/** Outil de sortie structurée pour un exercice unique (remplacement). */
+const EXERCISE_TOOL = {
+  name: 'proposer_exercice',
+  description: 'Renvoie un exercice de remplacement, structuré et prêt à être exécuté.',
+  input_schema: z.toJSONSchema(exerciseSchema, {
     target: 'draft-2020-12',
   }) as AnthropicSDK.Tool.InputSchema,
 }
@@ -82,33 +89,18 @@ export interface GenerationContext {
 
 /** Rassemble tout le contexte nécessaire à la génération d'une séance pour `date`. */
 export function buildGenerationContext(date: string): {
-  settingsRow: typeof settings.$inferSelect
-  profileRow: typeof profile.$inferSelect
+  settingsRow: ReturnType<typeof getSettings>
   context: GenerationContext
 } {
-  const db = useDatabase()
-  ensureSingletons(db)
+  const settingsRow = getSettings()
+  const profileRow = getProfile()
 
-  const settingsRow = db.select().from(settings).where(eq(settings.id, 1)).get()!
-  const profileRow = db.select().from(profile).where(eq(profile.id, 1)).get()!
-
-  // 8 dernières séances (hors la date visée, utile en cas de régénération).
-  const recent = db
-    .select()
-    .from(sessions)
-    .where(eq(sessions.status, 'completed'))
-    .orderBy(desc(sessions.date))
-    .limit(8)
-    .all()
-    .filter((s) => s.date !== date)
+  const allCompleted = listCompletedSessions()
+  const recent = allCompleted.filter((s) => s.date !== date).slice(0, 8)
 
   const ids = recent.map((s) => s.id)
-  const sFeedback = ids.length
-    ? db.select().from(sessionFeedback).where(inArray(sessionFeedback.sessionId, ids)).all()
-    : []
-  const eFeedback = ids.length
-    ? db.select().from(exerciseFeedback).where(inArray(exerciseFeedback.sessionId, ids)).all()
-    : []
+  const sFeedback = listSessionFeedbackByIds(ids)
+  const eFeedback = listExerciseFeedbackByIds(ids)
 
   const historique: HistoryEntry[] = recent.map((s) => {
     const sf = sFeedback.find((f) => f.sessionId === s.id)
@@ -137,25 +129,18 @@ export function buildGenerationContext(date: string): {
     }
   })
 
-  // Tendance : nombre de séances complétées sur 7 / 30 jours + jours depuis la dernière.
   const cutoff7 = addDays(date, -7)
   const cutoff30 = addDays(date, -30)
-  const completed30 = db
-    .select({ date: sessions.date })
-    .from(sessions)
-    .where(gte(sessions.date, cutoff30))
-    .all()
-    .filter((s) => s.date < date)
-  const seances7j = completed30.filter((s) => s.date >= cutoff7).length
-  const derniere = historique[0]?.date ?? null
+  const inRange = allCompleted.filter((s) => s.date >= cutoff30 && s.date < date)
+  const seances7j = inRange.filter((s) => s.date >= cutoff7).length
+  const derniere = recent[0]?.date ?? null
 
-  // Poids (si activé et disponible).
   let poids: Record<string, unknown> | null = null
   if (settingsRow.weightTrackingEnabled) {
-    const all = db.select().from(weights).orderBy(desc(weights.date)).limit(30).all()
+    const all = listWeights()
     if (all.length) {
-      const actuel = all[0]!
-      const ancien = all.find((w) => w.date <= cutoff30) ?? all[all.length - 1]!
+      const actuel = all[all.length - 1]!
+      const ancien = all.find((w) => w.date >= cutoff30) ?? all[0]!
       poids = {
         actuelKg: actuel.weightKg,
         dateActuel: actuel.date,
@@ -185,7 +170,7 @@ export function buildGenerationContext(date: string): {
     },
     tendance: {
       seances7j,
-      seances30j: completed30.length,
+      seances30j: inRange.length,
       derniereSeance: derniere,
       joursDepuisDerniereSeance: derniere ? daysBetween(derniere, date) : null,
     },
@@ -193,7 +178,7 @@ export function buildGenerationContext(date: string): {
     historique,
   }
 
-  return { settingsRow, profileRow, context }
+  return { settingsRow, context }
 }
 
 /**
@@ -204,8 +189,7 @@ export async function generateSessionForDate(
   date: string,
   options: { regenerate?: boolean } = {},
 ): Promise<Session> {
-  const db = useDatabase()
-  const existing = db.select().from(sessions).where(eq(sessions.date, date)).get()
+  const existing = findSessionByDate(date)
   if (existing && !options.regenerate) return existing
 
   const { settingsRow, context } = buildGenerationContext(date)
@@ -224,22 +208,24 @@ export async function generateSessionForDate(
   ].join('\n')
 
   const client = useAnthropic()
-
   let response
   try {
-    response = await client.messages.create({
-      model: settingsRow.aiModel,
-      max_tokens: 12_000,
-      system: SYSTEM_PROMPT,
-      tools: [SESSION_TOOL],
-      tool_choice: { type: 'tool', name: SESSION_TOOL.name },
-      messages: [{ role: 'user', content: userPrompt }],
-    }, { timeout: 120_000, maxRetries: 1 })
+    response = await client.messages.create(
+      {
+        model: settingsRow.aiModel,
+        max_tokens: 12_000,
+        system: SYSTEM_PROMPT,
+        tools: [SESSION_TOOL],
+        tool_choice: { type: 'tool', name: SESSION_TOOL.name },
+        messages: [{ role: 'user', content: userPrompt }],
+      },
+      { timeout: 120_000, maxRetries: 1 },
+    )
   } catch (error) {
     console.error('[generation] Appel Anthropic échoué :', error)
     throw createError({
       statusCode: 502,
-      statusMessage: "La génération de la séance a échoué (erreur du modèle). Réessaie.",
+      statusMessage: 'La génération de la séance a échoué (erreur du modèle). Réessaie.',
     })
   }
 
@@ -263,7 +249,6 @@ export async function generateSessionForDate(
   }
 
   const session = parsed.data
-  const now = new Date()
   const values: NewSession = {
     date,
     status: 'generated',
@@ -276,147 +261,14 @@ export async function generateSessionForDate(
     structure: session,
     aiModel: settingsRow.aiModel,
     generationContext: context,
-    generatedAt: now,
+    generatedAt: new Date(),
   }
 
-  db.insert(sessions)
-    .values(values)
-    .onConflictDoUpdate({
-      target: sessions.date,
-      set: {
-        ...values,
-        updatedAt: now,
-        startedAt: null,
-        completedAt: null,
-        actualDurationSec: null,
-      },
-    })
-    .run()
-
-  return db.select().from(sessions).where(eq(sessions.date, date)).get()!
+  return upsertSessionByDate(values)
 }
 
-/**
- * Garantit la séance du jour : si aujourd'hui est un jour d'entraînement et qu'aucune
- * séance n'existe encore, la génère (nécessite la clé API). Sinon renvoie l'existante ou null.
- * Utilisé par le cron, le rattrapage au démarrage et l'ouverture de l'appli.
- */
-export function ensureTodaySession(): Session | null {
-  const db = useDatabase()
-  ensureSingletons(db)
-  const settingsRow = db.select().from(settings).where(eq(settings.id, 1)).get()!
-  const today = todayIso(settingsRow.timezone)
-
-  if (!settingsRow.trainingDays.includes(isoWeekday(today))) return null
-
-  const existing = db.select().from(sessions).where(eq(sessions.date, today)).get()
-  if (existing) return existing
-
-  const { anthropicApiKey } = useRuntimeConfig()
-  if (!anthropicApiKey) {
-    console.warn("[generation] Jour d'entraînement mais clé API absente : séance non générée.")
-    return null
-  }
-  // Génération lancée en arrière-plan (ne bloque ni le cron ni la requête HTTP).
-  triggerGeneration(today)
-  return null
-}
-
-/**
- * Génération en arrière-plan (fire-and-forget), dédupliquée par date : plusieurs
- * requêtes simultanées ne lancent qu'une seule génération.
- */
-const inFlightGenerations = new Set<string>()
-
-export function isGenerating(date: string): boolean {
-  return inFlightGenerations.has(date)
-}
-
-export function triggerGeneration(date: string, options: { regenerate?: boolean } = {}): void {
-  if (inFlightGenerations.has(date)) return
-  inFlightGenerations.add(date)
-  generateSessionForDate(date, options)
-    .catch((error) => console.error('[generation] Génération en arrière-plan échouée :', error))
-    .finally(() => inFlightGenerations.delete(date))
-}
-
-/** Outil de sortie structurée pour un exercice unique (remplacement). */
-const EXERCISE_TOOL = {
-  name: 'proposer_exercice',
-  description: "Renvoie un exercice de remplacement, structuré et prêt à être exécuté.",
-  input_schema: z.toJSONSchema(exerciseSchema, {
-    target: 'draft-2020-12',
-  }) as AnthropicSDK.Tool.InputSchema,
-}
-
-function loadSessionOrThrow(date: string): Session {
-  const db = useDatabase()
-  const row = db.select().from(sessions).where(eq(sessions.date, date)).get()
-  if (!row) throw createError({ statusCode: 404, statusMessage: 'Séance introuvable.' })
-  return row
-}
-
-/** Réécrit la structure d'une séance et recalcule sa durée estimée. */
-function persistStructure(date: string, structure: WorkoutSession): Session {
-  const db = useDatabase()
-  const estimatedDurationMin = Math.max(1, Math.round(estimateSessionSeconds(structure) / 60))
-  db.update(sessions)
-    .set({ structure, estimatedDurationMin, updatedAt: new Date() })
-    .where(eq(sessions.date, date))
-    .run()
-  return db.select().from(sessions).where(eq(sessions.date, date)).get()!
-}
-
-/** Retire un exercice (ou son bloc s'il devient vide). */
-export function removeExerciseFromSession(
-  date: string,
-  blockIndex: number,
-  exerciseIndex: number,
-): Session {
-  const row = loadSessionOrThrow(date)
-  const structure = structuredClone(row.structure)
-  const block = structure.blocks[blockIndex]
-  if (!block || !block.exercises[exerciseIndex]) {
-    throw createError({ statusCode: 400, statusMessage: 'Exercice introuvable.' })
-  }
-  if (block.exercises.length > 1) {
-    block.exercises.splice(exerciseIndex, 1)
-  } else if (structure.blocks.length > 1) {
-    structure.blocks.splice(blockIndex, 1)
-  } else {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Impossible de retirer le dernier exercice de la séance.',
-    })
-  }
-  return persistStructure(date, structure)
-}
-
-/** Remplace un exercice par une alternative générée par l'IA. */
-export async function replaceExerciseInSession(
-  date: string,
-  blockIndex: number,
-  exerciseIndex: number,
-  reason?: string,
-): Promise<Session> {
-  const row = loadSessionOrThrow(date)
-  const structure = structuredClone(row.structure)
-  const block = structure.blocks[blockIndex]
-  const current = block?.exercises[exerciseIndex]
-  if (!block || !current) {
-    throw createError({ statusCode: 400, statusMessage: 'Exercice introuvable.' })
-  }
-  block.exercises[exerciseIndex] = await generateReplacementExercise(
-    structure,
-    blockIndex,
-    exerciseIndex,
-    reason,
-    row.aiModel,
-  )
-  return persistStructure(date, structure)
-}
-
-async function generateReplacementExercise(
+/** Génère un exercice de remplacement cohérent avec la séance et le bloc concernés. */
+export async function generateReplacementExercise(
   structure: WorkoutSession,
   blockIndex: number,
   exerciseIndex: number,
@@ -441,14 +293,17 @@ async function generateReplacementExercise(
   const client = useAnthropic()
   let response
   try {
-    response = await client.messages.create({
-      model,
-      max_tokens: 2000,
-      system: SYSTEM_PROMPT,
-      tools: [EXERCISE_TOOL],
-      tool_choice: { type: 'tool', name: EXERCISE_TOOL.name },
-      messages: [{ role: 'user', content: userPrompt }],
-    }, { timeout: 60_000, maxRetries: 1 })
+    response = await client.messages.create(
+      {
+        model,
+        max_tokens: 2000,
+        system: SYSTEM_PROMPT,
+        tools: [EXERCISE_TOOL],
+        tool_choice: { type: 'tool', name: EXERCISE_TOOL.name },
+        messages: [{ role: 'user', content: userPrompt }],
+      },
+      { timeout: 60_000, maxRetries: 1 },
+    )
   } catch (error) {
     console.error("[generation] Remplacement d'exercice échoué :", error)
     throw createError({
@@ -473,4 +328,45 @@ async function generateReplacementExercise(
     })
   }
   return parsed.data
+}
+
+/**
+ * Génération en arrière-plan (fire-and-forget), dédupliquée par date : plusieurs
+ * requêtes simultanées ne lancent qu'une seule génération.
+ */
+const inFlightGenerations = new Set<string>()
+
+export function isGenerating(date: string): boolean {
+  return inFlightGenerations.has(date)
+}
+
+export function triggerGeneration(date: string, options: { regenerate?: boolean } = {}): void {
+  if (inFlightGenerations.has(date)) return
+  inFlightGenerations.add(date)
+  generateSessionForDate(date, options)
+    .catch((error) => console.error('[generation] Génération en arrière-plan échouée :', error))
+    .finally(() => inFlightGenerations.delete(date))
+}
+
+/**
+ * Garantit la séance du jour : si aujourd'hui est un jour d'entraînement et qu'aucune
+ * séance n'existe, lance la génération en arrière-plan. Renvoie l'existante ou null.
+ */
+export function ensureTodaySession(): Session | null {
+  const settingsRow = getSettings()
+  const today = todayIso(settingsRow.timezone)
+
+  if (!settingsRow.trainingDays.includes(isoWeekday(today))) return null
+
+  const existing = findSessionByDate(today)
+  if (existing) return existing
+
+  const { anthropicApiKey } = useRuntimeConfig()
+  if (!anthropicApiKey) {
+    console.warn("[generation] Jour d'entraînement mais clé API absente : séance non générée.")
+    return null
+  }
+
+  triggerGeneration(today)
+  return null
 }

@@ -3,7 +3,14 @@ export default defineNuxtConfig({
   compatibilityDate: '2026-07-01',
   devtools: { enabled: true },
 
-  modules: ['@nuxt/ui', '@vite-pwa/nuxt'],
+  modules: ['@nuxt/ui', '@vite-pwa/nuxt', '@nuxt/eslint'],
+
+  eslint: {
+    config: {
+      // Prettier gère le formatage → on désactive les règles stylistiques d'ESLint.
+      stylistic: false,
+    },
+  },
 
   css: ['~/assets/css/main.css'],
 
@@ -21,7 +28,11 @@ export default defineNuxtConfig({
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
-        { name: 'description', content: 'Coach de boxe à domicile : séances quotidiennes générées par IA, timer à intervalles et suivi de progression.' },
+        {
+          name: 'description',
+          content:
+            'Coach de boxe à domicile : séances quotidiennes générées par IA, timer à intervalles et suivi de progression.',
+        },
         { name: 'theme-color', content: '#0a0a0a' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
         { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
@@ -48,6 +59,10 @@ export default defineNuxtConfig({
 
   nitro: {
     preset: 'node-server',
+    // Couches métier auto-importées côté serveur (repositories → services → api).
+    imports: {
+      dirs: ['server/repositories', 'server/services'],
+    },
     // The SQLite file lives in ./data — keep it out of the bundle.
     // Cron scheduling is handled by a Nitro server plugin (croner).
   },
@@ -67,7 +82,12 @@ export default defineNuxtConfig({
       icons: [
         { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
         { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-        { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        {
+          src: '/icons/maskable-512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'maskable',
+        },
       ],
     },
     workbox: {

@@ -1,4 +1,3 @@
-import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 const schema = z.object({
@@ -17,33 +16,20 @@ export default defineEventHandler(async (event) => {
   if (!parsed.success) {
     throw createError({ statusCode: 400, statusMessage: "Réponses d'onboarding invalides." })
   }
-  const body = parsed.data
-  const now = new Date()
+  const b = parsed.data
 
-  const db = useDatabase()
-  ensureSingletons(db)
-
-  db.update(profile)
-    .set({
-      fitnessLevel: body.fitnessLevel,
-      experience: body.experience,
-      age: body.age,
-      constraints: body.constraints,
-      updatedAt: now,
-    })
-    .where(eq(profile.id, 1))
-    .run()
-
-  db.update(settings)
-    .set({
-      trainingDays: [...new Set(body.trainingDays)].sort((a, b) => a - b),
-      generationTime: body.generationTime,
-      targetDurationMin: body.targetDurationMin,
-      onboardingCompleted: true,
-      updatedAt: now,
-    })
-    .where(eq(settings.id, 1))
-    .run()
+  updateProfile({
+    fitnessLevel: b.fitnessLevel,
+    experience: b.experience,
+    age: b.age,
+    constraints: b.constraints,
+  })
+  updateSettings({
+    trainingDays: [...new Set(b.trainingDays)].sort((x, y) => x - y),
+    generationTime: b.generationTime,
+    targetDurationMin: b.targetDurationMin,
+    onboardingCompleted: true,
+  })
 
   const { disableCron } = useRuntimeConfig()
   if (!disableCron) scheduleGeneration()

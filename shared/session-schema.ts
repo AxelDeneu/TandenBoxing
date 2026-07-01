@@ -115,6 +115,23 @@ export const PUNCH_NOTATION: Record<string, string> = {
   '6': 'Uppercut arrière',
 }
 
+const PUNCH_SHORT: Record<string, string> = {
+  '1': 'jab',
+  '2': 'cross',
+  '3': 'crochet avant',
+  '4': 'crochet arrière',
+  '5': 'uppercut avant',
+  '6': 'uppercut arrière',
+}
+
+/** Traduit un combo « 1-2-3 » en « jab → cross → crochet avant ». */
+export function comboToText(combo: string): string {
+  return combo
+    .split('-')
+    .map((n) => PUNCH_SHORT[n.trim()] ?? n.trim())
+    .join(' → ')
+}
+
 /** Durée totale d'un exercice en secondes (rounds d'effort + repos inter-rounds + repos après). */
 export function estimateExerciseSeconds(exercise: Exercise): number {
   const { work, rest, rounds } = exercise.intervals

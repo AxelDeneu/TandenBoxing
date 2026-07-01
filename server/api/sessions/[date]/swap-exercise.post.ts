@@ -1,7 +1,6 @@
 /**
  * POST /api/sessions/:date/swap-exercise
  * Body: { blockIndex, exerciseIndex, action: 'replace' | 'remove', reason? }
- * Remplace (via IA) ou retire un exercice de la séance.
  */
 export default defineEventHandler(async (event) => {
   const date = getRouterParam(event, 'date')!

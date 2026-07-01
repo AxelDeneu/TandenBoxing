@@ -1,8 +1,10 @@
-import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 const schema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   weightKg: z.number().positive().max(400),
 })
 
@@ -12,16 +14,6 @@ export default defineEventHandler(async (event) => {
   if (!parsed.success) {
     throw createError({ statusCode: 400, statusMessage: 'Poids invalide.' })
   }
-
-  const db = useDatabase()
-  ensureSingletons(db)
-  const s = db.select().from(settings).where(eq(settings.id, 1)).get()!
-  const date = parsed.data.date ?? todayIso(s.timezone)
-
-  db.insert(weights)
-    .values({ date, weightKg: parsed.data.weightKg })
-    .onConflictDoUpdate({ target: weights.date, set: { weightKg: parsed.data.weightKg } })
-    .run()
-
-  return db.select().from(weights).where(eq(weights.date, date)).get()!
+  const date = parsed.data.date ?? todayIso(getSettings().timezone)
+  return upsertWeight(date, parsed.data.weightKg)
 })

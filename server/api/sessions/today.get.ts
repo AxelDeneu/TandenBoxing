@@ -1,23 +1,16 @@
-import { eq } from 'drizzle-orm'
-
 /**
  * GET /api/sessions/today
- * Renvoie l'état de la journée. Si la séance manque (jour d'entraînement + clé API),
- * la génération est lancée en arrière-plan (non bloquant) et `generating` passe à true —
- * le client affiche un état « préparation » puis rafraîchit jusqu'à ce que la séance arrive.
+ * État de la journée. Si la séance manque (jour d'entraînement + clé API), la génération
+ * est lancée en arrière-plan et `generating` passe à true.
  */
 export default defineEventHandler(() => {
-  const db = useDatabase()
-  ensureSingletons(db)
-  const settingsRow = db.select().from(settings).where(eq(settings.id, 1)).get()!
-
-  const today = todayIso(settingsRow.timezone)
-  const isTrainingDay = settingsRow.trainingDays.includes(isoWeekday(today))
+  const s = getSettings()
+  const today = todayIso(s.timezone)
+  const isTrainingDay = s.trainingDays.includes(isoWeekday(today))
   const { anthropicApiKey } = useRuntimeConfig()
   const hasApiKey = Boolean(anthropicApiKey)
 
-  const session = db.select().from(sessions).where(eq(sessions.date, today)).get() ?? null
-
+  const session = findSessionByDate(today) ?? null
   if (!session && isTrainingDay && hasApiKey) {
     triggerGeneration(today)
   }
@@ -26,7 +19,7 @@ export default defineEventHandler(() => {
     date: today,
     isTrainingDay,
     hasApiKey,
-    onboardingCompleted: settingsRow.onboardingCompleted,
+    onboardingCompleted: s.onboardingCompleted,
     session,
     generating: isGenerating(today),
   }

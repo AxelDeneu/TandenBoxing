@@ -105,12 +105,17 @@ export const sessionFeedback = sqliteTable('session_feedback', {
   /** Niveau d'énergie 1-5. */
   energyLevel: integer('energy_level'),
   /** Zones de courbatures (ex: ["épaules","mollets"]). */
-  soreness: text('soreness', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
+  soreness: text('soreness', { mode: 'json' })
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'`),
   /** Plaisir / motivation 1-5. */
   enjoyment: integer('enjoyment'),
   comment: text('comment'),
   actualDurationSec: integer('actual_duration_sec'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
 })
 
 /**
@@ -128,7 +133,9 @@ export const exerciseFeedback = sqliteTable('exercise_feedback', {
   /** Difficulté ressentie 1-5. */
   difficulty: integer('difficulty'),
   comment: text('comment'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
 })
 
 /**
@@ -138,7 +145,9 @@ export const weights = sqliteTable('weights', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   date: text('date').notNull().unique(),
   weightKg: real('weight_kg').notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
 })
 
 export type Settings = typeof settings.$inferSelect

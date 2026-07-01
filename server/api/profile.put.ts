@@ -1,4 +1,3 @@
-import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 const schema = z
@@ -21,13 +20,5 @@ export default defineEventHandler(async (event) => {
   if (!parsed.success) {
     throw createError({ statusCode: 400, statusMessage: 'Profil invalide.' })
   }
-
-  const db = useDatabase()
-  ensureSingletons(db)
-  db.update(profile)
-    .set({ ...parsed.data, updatedAt: new Date() })
-    .where(eq(profile.id, 1))
-    .run()
-
-  return db.select().from(profile).where(eq(profile.id, 1)).get()!
+  return updateProfile(parsed.data)
 })

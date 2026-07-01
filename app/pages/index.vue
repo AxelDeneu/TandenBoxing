@@ -11,6 +11,7 @@ const { data, refresh } = await useFetch<TodayResponse>('/api/sessions/today', {
 const toast = useToast()
 
 const showRegen = ref(false)
+const showReschedule = ref(false)
 const regenLoading = ref(false)
 const busyKey = ref<string | null>(null)
 
@@ -105,7 +106,16 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
       <UDropdownMenu
         v-if="session"
         :items="[
-          { label: 'Régénérer la séance', icon: 'i-lucide-refresh-cw', onSelect: () => (showRegen = true) },
+          {
+            label: 'Régénérer la séance',
+            icon: 'i-lucide-refresh-cw',
+            onSelect: () => (showRegen = true),
+          },
+          {
+            label: 'Reporter à une autre date',
+            icon: 'i-lucide-calendar-clock',
+            onSelect: () => (showReschedule = true),
+          },
         ]"
         :content="{ align: 'end' }"
       >
@@ -295,5 +305,12 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
         </div>
       </template>
     </UModal>
+
+    <RescheduleModal
+      v-if="session"
+      v-model:open="showReschedule"
+      :date="session.date"
+      @done="refresh"
+    />
   </div>
 </template>

@@ -15,14 +15,14 @@ timer à intervalles avec audio, et suivi de progression.
 
 ## Stack
 
-| | |
-| --- | --- |
-| Framework | Nuxt 4 (Vue 3, Nitro) + Nuxt UI |
-| Base de données | SQLite (better-sqlite3) + Drizzle ORM |
-| IA | `@anthropic-ai/sdk` (sortie structurée, Zod) |
-| Cron | croner (plugin Nitro) |
-| PWA | `@vite-pwa/nuxt` |
-| Graphiques | Chart.js |
+|                 |                                              |
+| --------------- | -------------------------------------------- |
+| Framework       | Nuxt 4 (Vue 3, Nitro) + Nuxt UI              |
+| Base de données | SQLite (better-sqlite3) + Drizzle ORM        |
+| IA              | `@anthropic-ai/sdk` (sortie structurée, Zod) |
+| Cron            | croner (plugin Nitro)                        |
+| PWA             | `@vite-pwa/nuxt`                             |
+| Graphiques      | Chart.js                                     |
 
 ## Démarrage (dev)
 
@@ -38,14 +38,14 @@ npm run dev                 # http://localhost:3000
 
 ## Scripts utiles
 
-| Script | Rôle |
-| --- | --- |
-| `npm run dev` | Serveur de développement |
-| `npm run build` | Build de production (`.output`) |
-| `npm run db:generate` | Génère une migration depuis le schéma Drizzle |
-| `npm run db:migrate` | Applique les migrations |
-| `npm run db:studio` | Explorateur de base Drizzle |
-| `npm run icons` | Régénère les icônes PWA depuis `public/icon.svg` |
+| Script                | Rôle                                             |
+| --------------------- | ------------------------------------------------ |
+| `npm run dev`         | Serveur de développement                         |
+| `npm run build`       | Build de production (`.output`)                  |
+| `npm run db:generate` | Génère une migration depuis le schéma Drizzle    |
+| `npm run db:migrate`  | Applique les migrations                          |
+| `npm run db:studio`   | Explorateur de base Drizzle                      |
+| `npm run icons`       | Régénère les icônes PWA depuis `public/icon.svg` |
 
 ## Structure
 
@@ -66,5 +66,5 @@ Voir [DEPLOY.md](./DEPLOY.md) (Dokploy / Docker).
 
 ---
 
-*Ceci est un outil de remise en forme, pas un substitut à un coach ou à un avis médical.
-Échauffe-toi, respecte tes limites.*
+_Ceci est un outil de remise en forme, pas un substitut à un coach ou à un avis médical.
+Échauffe-toi, respecte tes limites._

@@ -14,9 +14,7 @@ function isActive(to: string) {
 </script>
 
 <template>
-  <nav
-    class="fixed inset-x-0 bottom-0 z-40 border-t border-default bg-default/85 backdrop-blur-lg"
-  >
+  <nav class="fixed inset-x-0 bottom-0 z-40 border-t border-default bg-default/85 backdrop-blur-lg">
     <div class="mx-auto grid max-w-lg grid-cols-4">
       <NuxtLink
         v-for="item in items"

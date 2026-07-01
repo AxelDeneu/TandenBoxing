@@ -51,7 +51,12 @@ async function submit() {
         targetDurationMin: form.targetDurationMin,
       },
     })
-    toast.add({ title: 'C\'est parti !', description: 'Ton profil est configuré.', icon: 'i-lucide-check', color: 'success' })
+    toast.add({
+      title: "C'est parti !",
+      description: 'Ton profil est configuré.',
+      icon: 'i-lucide-check',
+      color: 'success',
+    })
     await navigateTo('/')
   } catch (e: any) {
     toast.add({ title: 'Échec', description: e?.data?.statusMessage ?? e?.message, color: 'error' })
@@ -66,9 +71,7 @@ async function submit() {
     <header class="pt-2 text-center">
       <UIcon name="i-lucide-swords" class="mx-auto size-12 text-primary" />
       <h1 class="mt-2 text-2xl font-bold">Bienvenue sur Tanden Boxing</h1>
-      <p class="mt-1 text-sm text-muted">
-        Quelques questions pour calibrer tes séances de boxe.
-      </p>
+      <p class="mt-1 text-sm text-muted">Quelques questions pour calibrer tes séances de boxe.</p>
     </header>
 
     <section>
@@ -121,9 +124,7 @@ async function submit() {
     </section>
 
     <section>
-      <label class="mb-1.5 block text-sm font-medium">
-        Blessures / limitations (optionnel)
-      </label>
+      <label class="mb-1.5 block text-sm font-medium"> Blessures / limitations (optionnel) </label>
       <UTextarea
         v-model="form.constraints"
         :rows="2"
@@ -146,7 +147,14 @@ async function submit() {
       </p>
     </section>
 
-    <UButton block size="xl" color="primary" icon="i-lucide-rocket" :loading="saving" @click="submit">
+    <UButton
+      block
+      size="xl"
+      color="primary"
+      icon="i-lucide-rocket"
+      :loading="saving"
+      @click="submit"
+    >
       Commencer l'aventure
     </UButton>
   </div>

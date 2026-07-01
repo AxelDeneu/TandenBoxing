@@ -65,10 +65,7 @@ const menuItems = [
         <div class="space-y-3 pt-2 text-sm">
           <p class="whitespace-pre-line text-muted">{{ exercise.explanation }}</p>
 
-          <div
-            v-if="exercise.comboExplanation"
-            class="rounded-lg bg-primary/10 p-2.5 text-primary"
-          >
+          <div v-if="exercise.comboExplanation" class="rounded-lg bg-primary/10 p-2.5 text-primary">
             <UIcon name="i-lucide-info" class="mr-1 inline size-3.5 align-[-2px]" />
             {{ exercise.comboExplanation }}
           </div>

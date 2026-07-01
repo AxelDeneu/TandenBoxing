@@ -16,7 +16,10 @@ function toggle(n: number) {
   const set = new Set(props.modelValue)
   if (set.has(n)) set.delete(n)
   else set.add(n)
-  emit('update:modelValue', [...set].sort((a, b) => a - b))
+  emit(
+    'update:modelValue',
+    [...set].sort((a, b) => a - b),
+  )
 }
 </script>
 
