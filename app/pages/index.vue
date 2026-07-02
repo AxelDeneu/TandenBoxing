@@ -12,7 +12,9 @@ const toast = useToast()
 
 const showRegen = ref(false)
 const showReschedule = ref(false)
+const showDelete = ref(false)
 const regenLoading = ref(false)
+const deleteLoading = ref(false)
 const busyKey = ref<string | null>(null)
 
 const session = computed(() => data.value?.session ?? null)
@@ -72,6 +74,21 @@ async function generateNow() {
   }
 }
 
+async function deleteSession() {
+  if (!session.value) return
+  deleteLoading.value = true
+  try {
+    await $fetch(`/api/sessions/${session.value.date}`, { method: 'DELETE' })
+    showDelete.value = false
+    await refresh()
+    toast.add({ title: 'Séance supprimée', icon: 'i-lucide-trash-2', color: 'success' })
+  } catch (e) {
+    notifyError(e)
+  } finally {
+    deleteLoading.value = false
+  }
+}
+
 async function swap(blockIndex: number, exerciseIndex: number, action: 'replace' | 'remove') {
   if (!session.value) return
   busyKey.value = `${blockIndex}-${exerciseIndex}`
@@ -115,6 +132,12 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
             label: 'Reporter à une autre date',
             icon: 'i-lucide-calendar-clock',
             onSelect: () => (showReschedule = true),
+          },
+          {
+            label: 'Supprimer la séance',
+            icon: 'i-lucide-trash-2',
+            color: 'error',
+            onSelect: () => (showDelete = true),
           },
         ]"
         :content="{ align: 'end' }"
@@ -312,5 +335,25 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
       :date="session.date"
       @done="refresh"
     />
+
+    <UModal
+      v-model:open="showDelete"
+      title="Supprimer la séance ?"
+      description="Cette action est définitive : la séance et son feedback seront supprimés."
+    >
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" @click="showDelete = false">Annuler</UButton>
+          <UButton
+            color="error"
+            icon="i-lucide-trash-2"
+            :loading="deleteLoading"
+            @click="deleteSession"
+          >
+            Supprimer
+          </UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

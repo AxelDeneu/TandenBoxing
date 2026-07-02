@@ -21,6 +21,27 @@ useHead({ title: () => data.value?.structure.title ?? 'Séance' })
 
 const totalSeconds = computed(() => (data.value ? estimateSessionSeconds(data.value.structure) : 0))
 const showReschedule = ref(false)
+const showDelete = ref(false)
+const deleteLoading = ref(false)
+const toast = useToast()
+
+async function deleteSession() {
+  deleteLoading.value = true
+  try {
+    await $fetch(`/api/sessions/${date}`, { method: 'DELETE' })
+    toast.add({ title: 'Séance supprimée', icon: 'i-lucide-trash-2', color: 'success' })
+    await navigateTo('/historique')
+  } catch (e: any) {
+    toast.add({
+      title: 'Échec',
+      description: e?.data?.statusMessage ?? e?.message,
+      color: 'error',
+      icon: 'i-lucide-triangle-alert',
+    })
+  } finally {
+    deleteLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -155,11 +176,41 @@ const showReschedule = ref(false)
         Reporter à une autre date
       </UButton>
 
+      <UButton
+        block
+        color="error"
+        variant="ghost"
+        icon="i-lucide-trash-2"
+        @click="showDelete = true"
+      >
+        Supprimer la séance
+      </UButton>
+
       <RescheduleModal
         v-model:open="showReschedule"
         :date="data.date"
         @done="() => navigateTo('/historique')"
       />
+
+      <UModal
+        v-model:open="showDelete"
+        title="Supprimer la séance ?"
+        description="Cette action est définitive : la séance et son feedback seront supprimés."
+      >
+        <template #footer>
+          <div class="flex w-full justify-end gap-2">
+            <UButton color="neutral" variant="ghost" @click="showDelete = false">Annuler</UButton>
+            <UButton
+              color="error"
+              icon="i-lucide-trash-2"
+              :loading="deleteLoading"
+              @click="deleteSession"
+            >
+              Supprimer
+            </UButton>
+          </div>
+        </template>
+      </UModal>
     </template>
   </div>
 </template>

@@ -53,3 +53,8 @@ export function updateSessionByDate(date: string, patch: Partial<NewSession>): S
   const key = (patch.date as string | undefined) ?? date
   return db.select().from(sessions).where(eq(sessions.date, key)).get()!
 }
+
+/** Supprime la séance d'une date (le feedback lié part en cascade). */
+export function deleteSessionByDate(date: string): void {
+  useDatabase().delete(sessions).where(eq(sessions.date, date)).run()
+}

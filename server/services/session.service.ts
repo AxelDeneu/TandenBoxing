@@ -36,6 +36,12 @@ export function rescheduleSession(date: string, newDate: string): Session {
   return updateSessionByDate(date, { date: newDate })
 }
 
+/** Supprime définitivement une séance (et son feedback, en cascade). */
+export function deleteSession(date: string): void {
+  loadSessionOrThrow(date)
+  deleteSessionByDate(date)
+}
+
 /** Retire un exercice (ou son bloc s'il devient vide). */
 export function removeExerciseFromSession(
   date: string,
