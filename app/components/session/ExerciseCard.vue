@@ -63,11 +63,13 @@ const menuItems = [
       />
       <template #content>
         <div class="space-y-3 pt-2 text-sm">
-          <p class="whitespace-pre-line text-muted">{{ exercise.explanation }}</p>
+          <p class="whitespace-pre-line text-muted">
+            <GlossaryText :text="exercise.explanation" />
+          </p>
 
           <div v-if="exercise.comboExplanation" class="rounded-lg bg-primary/10 p-2.5 text-primary">
             <UIcon name="i-lucide-info" class="mr-1 inline size-3.5 align-[-2px]" />
-            {{ exercise.comboExplanation }}
+            <GlossaryText :text="exercise.comboExplanation" />
           </div>
 
           <div v-if="exercise.tips?.length">
@@ -75,7 +77,7 @@ const menuItems = [
             <ul class="space-y-1 text-muted">
               <li v-for="(tip, i) in exercise.tips" :key="i" class="flex gap-1.5">
                 <UIcon name="i-lucide-check" class="mt-0.5 size-3.5 shrink-0 text-emerald-400" />
-                <span>{{ tip }}</span>
+                <span><GlossaryText :text="tip" /></span>
               </li>
             </ul>
           </div>
@@ -85,7 +87,7 @@ const menuItems = [
             <ul class="space-y-1 text-muted">
               <li v-for="(mistake, i) in exercise.commonMistakes" :key="i" class="flex gap-1.5">
                 <UIcon name="i-lucide-x" class="mt-0.5 size-3.5 shrink-0 text-rose-400" />
-                <span>{{ mistake }}</span>
+                <span><GlossaryText :text="mistake" /></span>
               </li>
             </ul>
           </div>

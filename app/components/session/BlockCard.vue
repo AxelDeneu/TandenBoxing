@@ -25,7 +25,7 @@ const seconds = computed(() =>
       <h3 class="text-sm font-bold uppercase tracking-wide">{{ block.title }}</h3>
       <span class="ml-auto text-xs text-dimmed">{{ formatDuration(seconds) }}</span>
     </div>
-    <p class="mb-3 text-sm text-muted">{{ block.description }}</p>
+    <p class="mb-3 text-sm text-muted"><GlossaryText :text="block.description" /></p>
 
     <div class="space-y-2">
       <ExerciseCard
