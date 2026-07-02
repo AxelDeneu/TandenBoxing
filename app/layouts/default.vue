@@ -4,5 +4,6 @@
       <slot />
     </main>
     <BottomNav />
+    <GlossaryDrawer />
   </div>
 </template>
