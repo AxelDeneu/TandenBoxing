@@ -150,6 +150,18 @@ export const weights = sqliteTable('weights', {
     .default(sql`(unixepoch())`),
 })
 
+/**
+ * Dates dont la séance a été volontairement supprimée ou déplacée : la génération
+ * automatique (cron, ouverture de l'appli) ne recrée rien pour ces dates.
+ * Une génération explicite (bouton) lève le marqueur.
+ */
+export const dismissedDates = sqliteTable('dismissed_dates', {
+  date: text('date').primaryKey(),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+})
+
 export type Settings = typeof settings.$inferSelect
 export type NewSettings = typeof settings.$inferInsert
 export type Profile = typeof profile.$inferSelect

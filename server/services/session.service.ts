@@ -33,6 +33,9 @@ export function rescheduleSession(date: string, newDate: string): Session {
       statusMessage: 'Une séance existe déjà à cette date.',
     })
   }
+  // La date d'origine reste volontairement vide : pas de régénération automatique.
+  dismissDate(date)
+  undismissDate(newDate)
   return updateSessionByDate(date, { date: newDate })
 }
 
@@ -40,6 +43,8 @@ export function rescheduleSession(date: string, newDate: string): Session {
 export function deleteSession(date: string): void {
   loadSessionOrThrow(date)
   deleteSessionByDate(date)
+  // Suppression volontaire : la génération auto ne doit pas recréer la séance.
+  dismissDate(date)
 }
 
 /** Retire un exercice (ou son bloc s'il devient vide). */

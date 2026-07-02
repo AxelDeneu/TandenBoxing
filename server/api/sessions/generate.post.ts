@@ -20,6 +20,9 @@ export default defineEventHandler(async (event) => {
       ? body.date
       : todayIso(getSettings().timezone)
 
+  // Demande explicite : lève le marqueur « volontairement vide » posé par une suppression/report.
+  undismissDate(date)
+
   triggerGeneration(date, { regenerate: Boolean(body?.regenerate) })
   return { ok: true, generating: true, date }
 })

@@ -34,6 +34,8 @@ export interface TodayResponse {
   hasApiKey: boolean
   onboardingCompleted: boolean
   session: ApiSession | null
+  /** La séance du jour a été volontairement supprimée/déplacée : pas de régénération auto. */
+  dismissed: boolean
   generating: boolean
 }
 

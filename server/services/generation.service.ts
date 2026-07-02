@@ -361,6 +361,9 @@ export function ensureTodaySession(): Session | null {
   const existing = findSessionByDate(today)
   if (existing) return existing
 
+  // Séance supprimée/déplacée volontairement : on ne recrée rien sans demande explicite.
+  if (isDateDismissed(today)) return null
+
   const { anthropicApiKey } = useRuntimeConfig()
   if (!anthropicApiKey) {
     console.warn("[generation] Jour d'entraînement mais clé API absente : séance non générée.")

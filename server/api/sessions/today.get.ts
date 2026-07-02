@@ -1,7 +1,8 @@
 /**
  * GET /api/sessions/today
  * État de la journée. Si la séance manque (jour d'entraînement + clé API), la génération
- * est lancée en arrière-plan et `generating` passe à true.
+ * est lancée en arrière-plan — sauf si la date a été volontairement vidée (suppression/report) :
+ * dans ce cas seule une génération explicite recrée une séance.
  */
 export default defineEventHandler(() => {
   const s = getSettings()
@@ -11,7 +12,9 @@ export default defineEventHandler(() => {
   const hasApiKey = Boolean(anthropicApiKey)
 
   const session = findSessionByDate(today) ?? null
-  if (!session && isTrainingDay && hasApiKey) {
+  const dismissed = !session && isDateDismissed(today)
+
+  if (!session && !dismissed && isTrainingDay && hasApiKey) {
     triggerGeneration(today)
   }
 
@@ -21,6 +24,7 @@ export default defineEventHandler(() => {
     hasApiKey,
     onboardingCompleted: s.onboardingCompleted,
     session,
+    dismissed,
     generating: isGenerating(today),
   }
 })

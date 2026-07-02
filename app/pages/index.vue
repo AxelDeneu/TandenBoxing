@@ -256,6 +256,28 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
         </div>
       </UCard>
 
+      <!-- Séance supprimée volontairement : pas de régénération sans demande explicite -->
+      <UCard v-else-if="data.dismissed && data.isTrainingDay">
+        <div class="flex flex-col items-center gap-3 py-8 text-center">
+          <UIcon name="i-lucide-calendar-off" class="size-10 text-muted" />
+          <div>
+            <h2 class="text-lg font-semibold">Pas de séance aujourd'hui</h2>
+            <p class="text-sm text-muted">
+              Tu as supprimé (ou déplacé) la séance du jour. Rien ne sera recréé automatiquement.
+            </p>
+          </div>
+          <UButton
+            v-if="data.hasApiKey"
+            color="primary"
+            icon="i-lucide-sparkles"
+            :loading="regenLoading"
+            @click="generateNow"
+          >
+            Générer une nouvelle séance
+          </UButton>
+        </div>
+      </UCard>
+
       <!-- Jour de repos -->
       <UCard v-else-if="!data.isTrainingDay">
         <div class="flex flex-col items-center gap-3 py-6 text-center">
