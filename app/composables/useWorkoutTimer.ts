@@ -1,5 +1,5 @@
 import { buildTimerPhases, type TimerPhase } from '~~/shared/timer'
-import type { WorkoutSession } from '~/utils/session'
+import type { Exercise, WorkoutSession } from '~/utils/session'
 
 export function useWorkoutTimer(session: WorkoutSession) {
   const sound = createSoundPlayer()
@@ -18,6 +18,14 @@ export function useWorkoutTimer(session: WorkoutSession) {
 
   const current = computed<TimerPhase | null>(() => phases[index.value] ?? null)
   const next = computed<TimerPhase | null>(() => phases[index.value + 1] ?? null)
+
+  /** Retrouve l'exercice source d'une phase (pour afficher son guide). */
+  function exerciseOf(phase: TimerPhase | null): Exercise | null {
+    if (!phase) return null
+    return session.blocks[phase.blockIndex]?.exercises[phase.exerciseIndex] ?? null
+  }
+  const currentExercise = computed<Exercise | null>(() => exerciseOf(current.value))
+  const nextExercise = computed<Exercise | null>(() => exerciseOf(next.value))
   const phaseProgress = computed(() => {
     const c = current.value
     if (!c || c.seconds === 0) return 0
@@ -175,6 +183,8 @@ export function useWorkoutTimer(session: WorkoutSession) {
     finished,
     current,
     next,
+    currentExercise,
+    nextExercise,
     totalSeconds,
     elapsedSeconds,
     phaseProgress,

@@ -73,3 +73,33 @@ export function daysBetween(a: string, b: string): number {
   const db = new Date(`${b}T12:00:00Z`).getTime()
   return Math.round((db - da) / 86_400_000)
 }
+
+/** Premier jour du mois d'une date ISO (« 2026-07-16 » → « 2026-07-01 »). */
+export function startOfMonth(dateIso: string): string {
+  return `${dateIso.slice(0, 7)}-01`
+}
+
+/** Décale une date ISO de `months` mois (ancrée sur le 1er du mois, sans débordement). */
+export function addMonths(dateIso: string, months: number): string {
+  const [y, m] = dateIso.split('-').map(Number)
+  const total = (y ?? 1970) * 12 + ((m ?? 1) - 1) + months
+  const ny = Math.floor(total / 12)
+  const nm = (total % 12) + 1
+  return `${String(ny).padStart(4, '0')}-${String(nm).padStart(2, '0')}-01`
+}
+
+/** Libellé FR « juillet 2026 » du mois d'une date ISO. */
+export function monthLabel(dateIso: string): string {
+  const [y, m] = dateIso.split('-').map(Number)
+  return `${MONTHS_FR[(m ?? 1) - 1]} ${y}`
+}
+
+/**
+ * Grille mensuelle de 42 jours (6 semaines) commençant le lundi de la semaine
+ * contenant le 1er du mois. Retourne les dates ISO ; `inMonth` se déduit du préfixe AAAA-MM.
+ */
+export function monthGridDays(dateIso: string): string[] {
+  const first = startOfMonth(dateIso)
+  const start = addDays(first, -(isoWeekday(first) - 1)) // recule jusqu'au lundi
+  return Array.from({ length: 42 }, (_, i) => addDays(start, i))
+}

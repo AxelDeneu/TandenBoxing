@@ -57,4 +57,93 @@ describe('buildTimerPhases', () => {
     const work = phases.find((p) => p.kind === 'work')!
     expect(work.sublabel).toContain('jab → cross')
   })
+
+  it('rattache chaque phase à son exercice source', () => {
+    expect(phases.every((p) => p.blockIndex === 0 && p.exerciseIndex === 0)).toBe(true)
+  })
+})
+
+// Le guide affiché pendant la séance retrouve l'exercice via blockIndex/exerciseIndex :
+// ces index doivent rester exacts sur une séance à plusieurs blocs/exercices.
+describe('buildTimerPhases — index de bloc/exercice', () => {
+  const multi = {
+    title: 't',
+    category: 'apprentissage',
+    focus: 'uppercuts',
+    summary: 's',
+    coachNote: 'c',
+    estimatedDurationMin: 10,
+    blocks: [
+      {
+        type: 'echauffement',
+        title: 'Échauffement',
+        description: 'd',
+        exercises: [
+          {
+            name: 'Mobilité',
+            category: 'mobilite',
+            explanation: 'x',
+            tips: [],
+            commonMistakes: [],
+            combo: null,
+            comboExplanation: null,
+            intervals: { work: 30, rest: 0, rounds: 1 },
+            restAfterSec: 10,
+          },
+        ],
+      },
+      {
+        type: 'technique',
+        title: 'Technique',
+        description: 'd',
+        exercises: [
+          {
+            name: 'Uppercut avant',
+            category: 'technique',
+            explanation: 'x',
+            tips: [],
+            commonMistakes: [],
+            combo: '5',
+            comboExplanation: null,
+            intervals: { work: 20, rest: 10, rounds: 2 },
+            restAfterSec: 10,
+          },
+          {
+            name: 'Uppercut arrière',
+            category: 'technique',
+            explanation: 'x',
+            tips: [],
+            commonMistakes: [],
+            combo: '6',
+            comboExplanation: null,
+            intervals: { work: 20, rest: 0, rounds: 1 },
+            restAfterSec: 0,
+          },
+        ],
+      },
+    ],
+  } as unknown as WorkoutSession
+
+  const phases = buildTimerPhases(multi)
+
+  it('permet de retrouver l’exercice source de chaque phase', () => {
+    for (const p of phases) {
+      const exercise = multi.blocks[p.blockIndex]?.exercises[p.exerciseIndex]
+      expect(exercise).toBeDefined()
+    }
+  })
+
+  it('pointe vers le bon exercice (nom cohérent avec le label des phases d’effort)', () => {
+    const work = phases.filter((p) => p.kind === 'work')
+    for (const p of work) {
+      expect(multi.blocks[p.blockIndex]!.exercises[p.exerciseIndex]!.name).toBe(p.label)
+    }
+  })
+
+  it('indexe correctement le second exercice du second bloc', () => {
+    const last = phases[phases.length - 1]!
+    expect(last.blockIndex).toBe(1)
+    expect(last.exerciseIndex).toBe(1)
+    expect(multi.blocks[1]!.exercises[1]!.name).toBe('Uppercut arrière')
+  })
 })

@@ -8,6 +8,7 @@ export default defineEventHandler(() => {
     date: r.date,
     status: r.status,
     title: r.title,
+    category: r.category,
     focus: r.focus,
     estimatedDurationMin: r.estimatedDurationMin,
     actualDurationSec: r.actualDurationSec,

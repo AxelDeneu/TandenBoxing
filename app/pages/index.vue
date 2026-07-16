@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TodayResponse } from '~/utils/session'
+import type { SessionCategory, TodayResponse } from '~/utils/session'
 
 useHead({ title: "Aujourd'hui" })
 
@@ -20,6 +20,12 @@ const busyKey = ref<string | null>(null)
 const session = computed(() => data.value?.session ?? null)
 const totalSeconds = computed(() =>
   session.value ? estimateSessionSeconds(session.value.structure) : 0,
+)
+// Catégorie : absente des séances générées avant l'ajout du champ.
+const categoryMeta = computed(() =>
+  session.value?.category
+    ? (SESSION_CATEGORY_META[session.value.category as SessionCategory] ?? null)
+    : null,
 )
 
 function notifyError(e: any, title = 'Échec') {
@@ -180,6 +186,15 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
         <UCard>
           <div class="space-y-3">
             <div class="flex flex-wrap items-center gap-2">
+              <UBadge
+                v-if="categoryMeta"
+                color="neutral"
+                variant="soft"
+                :icon="categoryMeta.icon"
+                :ui="{ leadingIcon: categoryMeta.iconClass }"
+              >
+                {{ categoryMeta.label }}
+              </UBadge>
               <UBadge color="primary" variant="soft" :icon="FOCUS_META[session.focus]?.icon">
                 {{ FOCUS_META[session.focus]?.label ?? session.focus }}
               </UBadge>
@@ -329,6 +344,11 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
           </UButton>
         </div>
       </UCard>
+
+      <!-- Point d'entrée vers la planification (visible quel que soit l'état du jour). -->
+      <UButton block color="neutral" variant="ghost" icon="i-lucide-calendar-days" to="/planning">
+        Planifier une séance
+      </UButton>
     </template>
 
     <UModal

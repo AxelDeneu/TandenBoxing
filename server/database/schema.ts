@@ -73,6 +73,11 @@ export const sessions = sqliteTable('sessions', {
   /** planned | generated | in_progress | completed | skipped */
   status: text('status').notNull().default('generated'),
   title: text('title').notNull(),
+  /**
+   * Catégorie (type) de la séance : apprentissage | renforcement | enchainement |
+   * cardio | recuperation. Nullable pour les séances générées avant l'ajout du champ.
+   */
+  category: text('category'),
   focus: text('focus').notNull(),
   summary: text('summary').notNull(),
   coachNote: text('coach_note').notNull().default(''),
@@ -139,6 +144,23 @@ export const exerciseFeedback = sqliteTable('exercise_feedback', {
 })
 
 /**
+ * Intention de planification d'une séance (une par date), découplée de la séance générée.
+ * Permet de planifier à l'avance une catégorie + un focus : la séance complète est générée
+ * le jour J (ou à la demande) en tenant compte de cette intention.
+ */
+export const sessionPlans = sqliteTable('session_plans', {
+  /** Date planifiée au format YYYY-MM-DD (fuseau utilisateur). */
+  date: text('date').primaryKey(),
+  /** Catégorie voulue : apprentissage | renforcement | enchainement | cardio | recuperation. */
+  category: text('category').notNull(),
+  /** Focus (thème) voulu ; null = laissé au choix de l'IA. */
+  focus: text('focus'),
+  /** Note libre de l'utilisateur (intention, contrainte du jour…). */
+  note: text('note'),
+  ...timestamps,
+})
+
+/**
  * Suivi optionnel du poids corporel.
  */
 export const weights = sqliteTable('weights', {
@@ -174,3 +196,5 @@ export type ExerciseFeedback = typeof exerciseFeedback.$inferSelect
 export type NewExerciseFeedback = typeof exerciseFeedback.$inferInsert
 export type Weight = typeof weights.$inferSelect
 export type NewWeight = typeof weights.$inferInsert
+export type SessionPlan = typeof sessionPlans.$inferSelect
+export type NewSessionPlan = typeof sessionPlans.$inferInsert

@@ -9,6 +9,8 @@ const {
   finished,
   current,
   next,
+  currentExercise,
+  nextExercise,
   totalSeconds,
   elapsedSeconds,
   phaseProgress,
@@ -22,6 +24,9 @@ const {
 } = useWorkoutTimer(props.session)
 
 const CIRC = 2 * Math.PI * 100
+
+// Sur mobile le guide est escamoté dans un slideover ; sur desktop il est toujours visible.
+const guideOpen = ref(false)
 
 const kindStyle = computed(() => {
   if (finished.value)
@@ -64,8 +69,13 @@ function restart() {
 </script>
 
 <template>
+  <!--
+    Pas de z-index ici : les overlays Nuxt UI (slideover du guide, drawer du glossaire) sont
+    téléportés en fin de <body> sans z-index. Un z-50 sur ce plein écran les masquerait.
+    La route timer est en `layout: false` → aucune barre de nav à recouvrir.
+  -->
   <div
-    class="fixed inset-0 z-50 flex flex-col text-white transition-colors duration-500"
+    class="fixed inset-0 flex flex-col text-white transition-colors duration-500"
     :class="kindStyle.bg"
   >
     <!-- Barre supérieure -->
@@ -98,50 +108,74 @@ function restart() {
       </div>
     </div>
 
-    <!-- Phase en cours -->
-    <div
-      v-if="!finished"
-      class="flex flex-1 flex-col items-center justify-center gap-5 p-4 text-center"
-    >
-      <p class="text-sm font-bold uppercase tracking-[0.2em]" :class="kindStyle.accent">
-        {{ kindStyle.label }}
-      </p>
+    <!-- Phase en cours — chrono seul en mobile, chrono + guide côte à côte en ≥ lg -->
+    <div v-if="!finished" class="flex min-h-0 flex-1 flex-col lg:flex-row lg:gap-8 lg:px-8 lg:py-4">
+      <div class="flex flex-1 flex-col items-center justify-center gap-5 p-4 text-center">
+        <p class="text-sm font-bold uppercase tracking-[0.2em]" :class="kindStyle.accent">
+          {{ kindStyle.label }}
+        </p>
 
-      <div class="relative flex items-center justify-center">
-        <svg viewBox="0 0 220 220" class="size-60 -rotate-90 sm:size-64">
-          <circle cx="110" cy="110" r="100" fill="none" class="stroke-white/10" stroke-width="10" />
-          <circle
-            cx="110"
-            cy="110"
-            r="100"
-            fill="none"
-            :class="kindStyle.ring"
-            stroke-width="10"
-            stroke-linecap="round"
-            :stroke-dasharray="CIRC"
-            :stroke-dashoffset="CIRC * (1 - phaseProgress)"
-            style="transition: stroke-dashoffset 0.2s linear"
-          />
-        </svg>
-        <div class="absolute flex flex-col items-center">
-          <span class="font-mono text-7xl font-bold tabular-nums">{{
-            formatClock(remaining)
-          }}</span>
-          <span v-if="current?.round" class="mt-1 text-sm opacity-70">
-            Round {{ current.round }}/{{ current.totalRounds }}
-          </span>
+        <div class="relative flex items-center justify-center">
+          <svg viewBox="0 0 220 220" class="size-60 -rotate-90 sm:size-64">
+            <circle
+              cx="110"
+              cy="110"
+              r="100"
+              fill="none"
+              class="stroke-white/10"
+              stroke-width="10"
+            />
+            <circle
+              cx="110"
+              cy="110"
+              r="100"
+              fill="none"
+              :class="kindStyle.ring"
+              stroke-width="10"
+              stroke-linecap="round"
+              :stroke-dasharray="CIRC"
+              :stroke-dashoffset="CIRC * (1 - phaseProgress)"
+              style="transition: stroke-dashoffset 0.2s linear"
+            />
+          </svg>
+          <div class="absolute flex flex-col items-center">
+            <span class="font-mono text-7xl font-bold tabular-nums">{{
+              formatClock(remaining)
+            }}</span>
+            <span v-if="current?.round" class="mt-1 text-sm opacity-70">
+              Round {{ current.round }}/{{ current.totalRounds }}
+            </span>
+          </div>
+        </div>
+
+        <div>
+          <h2 class="text-2xl font-bold leading-tight">{{ current?.label }}</h2>
+          <p v-if="current?.sublabel" class="mt-1 opacity-70">{{ current.sublabel }}</p>
+        </div>
+
+        <p v-if="next" class="text-sm opacity-50">
+          <UIcon name="i-lucide-arrow-right" class="inline size-3.5 align-[-2px]" />
+          Prochain : {{ next.label }}
+        </p>
+
+        <!-- Accès au guide en mobile (sur desktop il est affiché en permanence à droite) -->
+        <UButton
+          icon="i-lucide-book-open"
+          color="neutral"
+          variant="soft"
+          size="sm"
+          label="Guide"
+          class="lg:hidden"
+          @click="guideOpen = true"
+        />
+      </div>
+
+      <!-- Guide de l'activité en cours (desktop) -->
+      <div class="hidden min-h-0 flex-1 items-center lg:flex">
+        <div class="max-h-full w-full max-w-[420px] overflow-y-auto">
+          <ExerciseGuidePanel :exercise="currentExercise" :next="nextExercise" />
         </div>
       </div>
-
-      <div>
-        <h2 class="text-2xl font-bold leading-tight">{{ current?.label }}</h2>
-        <p v-if="current?.sublabel" class="mt-1 opacity-70">{{ current.sublabel }}</p>
-      </div>
-
-      <p v-if="next" class="text-sm opacity-50">
-        <UIcon name="i-lucide-arrow-right" class="inline size-3.5 align-[-2px]" />
-        Prochain : {{ next.label }}
-      </p>
     </div>
 
     <!-- Fin de séance -->
@@ -197,5 +231,20 @@ function restart() {
         @click="skip"
       />
     </div>
+
+    <!-- Guide escamotable (mobile) -->
+    <USlideover
+      v-model:open="guideOpen"
+      side="bottom"
+      title="Guide de l'exercice"
+      :ui="{ content: 'max-h-[85dvh]' }"
+    >
+      <template #body>
+        <ExerciseGuidePanel :exercise="currentExercise" :next="nextExercise" />
+      </template>
+    </USlideover>
+
+    <!-- La route timer n'a pas de layout : on monte le drawer du glossaire ici. -->
+    <GlossaryDrawer />
   </div>
 </template>

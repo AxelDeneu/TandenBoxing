@@ -15,6 +15,13 @@
       "when": 1782983440627,
       "tag": "0001_fine_brother_voodoo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784195842228,
+      "tag": "0002_bored_magik",
+      "breakpoints": true
     }
   ]
 }

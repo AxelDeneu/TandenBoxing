@@ -1,5 +1,10 @@
-import { estimateSessionSeconds, type WorkoutSession } from '../../shared/session-schema'
-import type { NewExerciseFeedback, Session } from '../database/schema'
+import {
+  estimateSessionSeconds,
+  type SessionCategory,
+  type WorkoutFocus,
+  type WorkoutSession,
+} from '../../shared/session-schema'
+import type { NewExerciseFeedback, Session, SessionPlan } from '../database/schema'
 
 function loadSessionOrThrow(date: string): Session {
   const row = findSessionByDate(date)
@@ -23,26 +28,90 @@ export function startSession(date: string): Session {
   })
 }
 
-/** Reporte une séance à une autre date (refuse si une séance existe déjà à la cible). */
-export function rescheduleSession(date: string, newDate: string): Session {
-  const row = loadSessionOrThrow(date)
-  if (newDate === date) return row
+export interface PlanPayload {
+  category: SessionCategory
+  focus?: WorkoutFocus | null
+  note?: string | null
+  /** Génère la séance complète immédiatement au lieu d'attendre le jour J. */
+  generateNow?: boolean
+}
+
+/**
+ * Planifie l'intention d'une date (catégorie + focus optionnel). La séance complète est
+ * générée le jour J par le cron, ou tout de suite si `generateNow`.
+ */
+export function planSession(
+  date: string,
+  payload: PlanPayload,
+): { plan: SessionPlan; generating: boolean } {
+  const plan = upsertPlan({
+    date,
+    category: payload.category,
+    focus: payload.focus ?? null,
+    note: payload.note ?? null,
+  })
+  // Planification explicite : la date redevient éligible à la génération automatique.
+  undismissDate(date)
+  if (payload.generateNow) triggerGeneration(date, { regenerate: true })
+  return { plan, generating: isGenerating(date) }
+}
+
+/**
+ * Reporte une séance à une autre date — ou, à défaut de séance générée, la simple
+ * intention planifiée. Refuse si la date cible est déjà occupée.
+ */
+export function rescheduleSession(
+  date: string,
+  newDate: string,
+): { session: Session | null; plan: SessionPlan | null } {
+  const row = findSessionByDate(date)
+  const plan = getPlan(date)
+  if (!row && !plan) {
+    throw createError({ statusCode: 404, statusMessage: 'Séance introuvable.' })
+  }
+  if (newDate === date) return { session: row ?? null, plan: plan ?? null }
+
   if (findSessionByDate(newDate)) {
     throw createError({
       statusCode: 409,
       statusMessage: 'Une séance existe déjà à cette date.',
     })
   }
+  const planCible = getPlan(newDate)
+  if (!row && planCible) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Une séance est déjà planifiée à cette date.',
+    })
+  }
+
   // La date d'origine reste volontairement vide : pas de régénération automatique.
   dismissDate(date)
   undismissDate(newDate)
-  return updateSessionByDate(date, { date: newDate })
+
+  // L'intention suit la séance ; si la cible a déjà la sienne, c'est elle qui fait foi.
+  let planFinal: SessionPlan | null = planCible ?? null
+  if (plan) {
+    deletePlan(date)
+    if (!planCible) {
+      planFinal = upsertPlan({
+        date: newDate,
+        category: plan.category,
+        focus: plan.focus,
+        note: plan.note,
+      })
+    }
+  }
+
+  return { session: row ? updateSessionByDate(date, { date: newDate }) : null, plan: planFinal }
 }
 
-/** Supprime définitivement une séance (et son feedback, en cascade). */
+/** Supprime définitivement une séance (et son feedback, en cascade) ainsi que son intention. */
 export function deleteSession(date: string): void {
   loadSessionOrThrow(date)
   deleteSessionByDate(date)
+  // L'intention planifiée disparaît avec la séance : rien ne doit rester à cette date.
+  deletePlan(date)
   // Suppression volontaire : la génération auto ne doit pas recréer la séance.
   dismissDate(date)
 }
@@ -136,6 +205,9 @@ export function submitFeedback(date: string, payload: FeedbackPayload): Session 
     comment: e.comment,
   }))
   replaceExerciseFeedback(row.id, feedbackRows)
+
+  // L'historique vient de changer : les recommandations en cache sont périmées.
+  if (payload.completed) clearRecommendationCache()
 
   return updateSessionByDate(date, {
     status: payload.completed ? 'completed' : row.status,

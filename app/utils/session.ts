@@ -1,12 +1,23 @@
 // Helpers de séance partagés (validés/testés dans shared/), ré-exportés pour l'auto-import client.
 import type { WorkoutSession } from '~~/shared/session-schema'
 
-export type { Exercise, WorkoutBlock, WorkoutSession } from '~~/shared/session-schema'
+export type {
+  Exercise,
+  WorkoutBlock,
+  WorkoutSession,
+  SessionCategory,
+  WorkoutFocus,
+} from '~~/shared/session-schema'
 export {
   comboToText,
   estimateExerciseSeconds,
   estimateSessionSeconds,
+  SESSION_CATEGORY_META,
+  FOCUS_META,
+  focusLabel,
+  categoryLabel,
 } from '~~/shared/session-schema'
+export type { FocusRecommendation } from '~~/shared/recommendations'
 
 export type SessionStatus = 'planned' | 'generated' | 'in_progress' | 'completed' | 'skipped'
 
@@ -15,6 +26,8 @@ export interface ApiSession {
   date: string
   status: SessionStatus
   title: string
+  /** Catégorie (type) de la séance ; null pour les séances antérieures au champ. */
+  category: string | null
   focus: string
   summary: string
   coachNote: string
@@ -39,6 +52,33 @@ export interface TodayResponse {
   generating: boolean
 }
 
+/** Intention de planification (séance pas forcément encore générée). */
+export interface ApiSessionPlan {
+  date: string
+  category: string
+  focus: string | null
+  note: string | null
+}
+
+/** Résumé léger d'une séance pour le calendrier. */
+export interface CalendarSession {
+  date: string
+  status: SessionStatus
+  title: string
+  category: string | null
+  focus: string
+  estimatedDurationMin: number
+  completedAt: number | null
+}
+
+/** Une case du calendrier : jour d'entraînement ou non, séance et/ou intention. */
+export interface CalendarDay {
+  date: string
+  isTrainingDay: boolean
+  session: CalendarSession | null
+  plan: ApiSessionPlan | null
+}
+
 export const CATEGORY_META = {
   cardio: { label: 'Cardio', icon: 'i-lucide-heart-pulse', iconClass: 'text-rose-400' },
   technique: { label: 'Technique', icon: 'i-lucide-target', iconClass: 'text-red-400' },
@@ -55,9 +95,4 @@ export const BLOCK_META: Record<string, { label: string; icon: string }> = {
   retour_au_calme: { label: 'Retour au calme', icon: 'i-lucide-leaf' },
 }
 
-export const FOCUS_META: Record<string, { label: string; icon: string }> = {
-  cardio: { label: 'Cardio', icon: 'i-lucide-heart-pulse' },
-  technique: { label: 'Technique', icon: 'i-lucide-target' },
-  mixte: { label: 'Mixte', icon: 'i-lucide-layers' },
-  recuperation: { label: 'Récupération', icon: 'i-lucide-leaf' },
-}
+// FOCUS_META / SESSION_CATEGORY_META sont désormais ré-exportés depuis ~~/shared/session-schema.

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { SessionCategory } from '~/utils/session'
+
 useHead({ title: 'Historique' })
 
 interface SessionListItem {
@@ -6,6 +8,8 @@ interface SessionListItem {
   date: string
   status: string
   title: string
+  /** Catégorie (type) de la séance ; null pour les séances antérieures au champ. */
+  category: string | null
   focus: string
   estimatedDurationMin: number
   actualDurationSec: number | null
@@ -21,6 +25,16 @@ const STATUS: Record<string, { label: string; color: any; icon: string }> = {
   skipped: { label: 'Manquée', color: 'neutral', icon: 'i-lucide-x' },
   planned: { label: 'Prévue', color: 'neutral', icon: 'i-lucide-clock' },
 }
+
+/** Lignes prêtes à l'affichage : catégorie résolue une seule fois (tolérante aux anciennes séances). */
+const rows = computed(() =>
+  (data.value ?? []).map((s) => ({
+    ...s,
+    categoryMeta: s.category
+      ? (SESSION_CATEGORY_META[s.category as SessionCategory] ?? null)
+      : null,
+  })),
+)
 </script>
 
 <template>
@@ -28,7 +42,7 @@ const STATUS: Record<string, { label: string; color: any; icon: string }> = {
     <h1 class="text-2xl font-bold">Historique</h1>
 
     <div
-      v-if="!data?.length"
+      v-if="!rows.length"
       class="flex flex-col items-center gap-2 rounded-xl border border-dashed border-default py-12 text-center"
     >
       <UIcon name="i-lucide-history" class="size-10 text-muted" />
@@ -36,7 +50,7 @@ const STATUS: Record<string, { label: string; color: any; icon: string }> = {
     </div>
 
     <div v-else class="space-y-2">
-      <NuxtLink v-for="s in data" :key="s.id" :to="`/seance/${s.date}`" class="block">
+      <NuxtLink v-for="s in rows" :key="s.id" :to="`/seance/${s.date}`" class="block">
         <div
           class="flex items-center gap-3 rounded-xl border border-default p-3 transition-colors hover:border-primary/40"
         >
@@ -51,6 +65,16 @@ const STATUS: Record<string, { label: string; color: any; icon: string }> = {
                 :icon="STATUS[s.status]?.icon"
               >
                 {{ STATUS[s.status]?.label ?? s.status }}
+              </UBadge>
+              <UBadge
+                v-if="s.categoryMeta"
+                color="neutral"
+                variant="soft"
+                size="sm"
+                :icon="s.categoryMeta.icon"
+                :ui="{ leadingIcon: s.categoryMeta.iconClass }"
+              >
+                {{ s.categoryMeta.label }}
               </UBadge>
               <span class="text-xs text-muted">{{ FOCUS_META[s.focus]?.label ?? s.focus }}</span>
               <span v-if="s.difficulty" class="text-xs text-muted">

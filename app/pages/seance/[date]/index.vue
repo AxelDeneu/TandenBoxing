@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ApiSession } from '~/utils/session'
+import type { ApiSession, SessionCategory } from '~/utils/session'
 
 interface SessionDetail extends ApiSession {
   feedback: {
@@ -20,6 +20,12 @@ const { data, error } = await useFetch<SessionDetail>(`/api/sessions/${date}`)
 useHead({ title: () => data.value?.structure.title ?? 'Séance' })
 
 const totalSeconds = computed(() => (data.value ? estimateSessionSeconds(data.value.structure) : 0))
+// Catégorie : absente des séances générées avant l'ajout du champ.
+const categoryMeta = computed(() =>
+  data.value?.category
+    ? (SESSION_CATEGORY_META[data.value.category as SessionCategory] ?? null)
+    : null,
+)
 const showReschedule = ref(false)
 const showDelete = ref(false)
 const deleteLoading = ref(false)
@@ -74,6 +80,15 @@ async function deleteSession() {
       <UCard>
         <div class="space-y-3">
           <div class="flex flex-wrap items-center gap-2">
+            <UBadge
+              v-if="categoryMeta"
+              color="neutral"
+              variant="soft"
+              :icon="categoryMeta.icon"
+              :ui="{ leadingIcon: categoryMeta.iconClass }"
+            >
+              {{ categoryMeta.label }}
+            </UBadge>
             <UBadge color="primary" variant="soft" :icon="FOCUS_META[data.focus]?.icon">
               {{ FOCUS_META[data.focus]?.label ?? data.focus }}
             </UBadge>

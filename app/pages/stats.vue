@@ -103,7 +103,7 @@ async function saveWeight() {
 
     <template v-if="stats">
       <!-- Tuiles -->
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div class="rounded-xl border border-default p-4">
           <div class="flex items-center gap-2 text-primary">
             <UIcon name="i-lucide-flame" class="size-5" />
@@ -136,54 +136,57 @@ async function saveWeight() {
         </div>
       </div>
 
-      <!-- Régularité -->
-      <UCard>
-        <template #header>
-          <h2 class="text-sm font-semibold">Régularité (8 dernières semaines)</h2>
-        </template>
-        <div class="h-48">
-          <BarChart :data="weeklyChart" :options="weeklyOptions" />
-        </div>
-      </UCard>
-
-      <!-- Difficulté / énergie -->
-      <UCard v-if="stats.difficultySeries.length">
-        <template #header>
-          <h2 class="text-sm font-semibold">Difficulté & énergie ressenties</h2>
-        </template>
-        <div class="h-48">
-          <LineChart :data="trendChart" :options="trendOptions" />
-        </div>
-        <div class="mt-3 flex gap-4 text-xs text-muted">
-          <span v-if="stats.avgDifficulty">Difficulté moy. : {{ stats.avgDifficulty }}/5</span>
-          <span v-if="stats.avgEnergy">Énergie moy. : {{ stats.avgEnergy }}/5</span>
-        </div>
-      </UCard>
-
-      <!-- Poids -->
-      <UCard v-if="stats.weightTrackingEnabled">
-        <template #header>
-          <h2 class="text-sm font-semibold">Poids</h2>
-        </template>
-        <div class="flex items-end gap-2">
-          <div class="flex-1">
-            <label class="mb-1.5 block text-xs text-muted">Poids du jour (kg)</label>
-            <UInput v-model.number="newWeight" type="number" step="0.1" placeholder="ex : 78.5" />
+      <!-- Graphiques : empilés en mobile, 2 colonnes en desktop -->
+      <div class="grid gap-5 lg:grid-cols-2 lg:items-start">
+        <!-- Régularité -->
+        <UCard>
+          <template #header>
+            <h2 class="text-sm font-semibold">Régularité (8 dernières semaines)</h2>
+          </template>
+          <div class="h-48 lg:h-56">
+            <BarChart :data="weeklyChart" :options="weeklyOptions" />
           </div>
-          <UButton
-            icon="i-lucide-plus"
-            color="primary"
-            :loading="savingWeight"
-            :disabled="!newWeight"
-            @click="saveWeight"
-          >
-            Ajouter
-          </UButton>
-        </div>
-        <div v-if="stats.weights.length" class="mt-4 h-48">
-          <LineChart :data="weightChart" :options="baseOptions" />
-        </div>
-      </UCard>
+        </UCard>
+
+        <!-- Difficulté / énergie -->
+        <UCard v-if="stats.difficultySeries.length">
+          <template #header>
+            <h2 class="text-sm font-semibold">Difficulté & énergie ressenties</h2>
+          </template>
+          <div class="h-48 lg:h-56">
+            <LineChart :data="trendChart" :options="trendOptions" />
+          </div>
+          <div class="mt-3 flex gap-4 text-xs text-muted">
+            <span v-if="stats.avgDifficulty">Difficulté moy. : {{ stats.avgDifficulty }}/5</span>
+            <span v-if="stats.avgEnergy">Énergie moy. : {{ stats.avgEnergy }}/5</span>
+          </div>
+        </UCard>
+
+        <!-- Poids -->
+        <UCard v-if="stats.weightTrackingEnabled" class="lg:col-span-2">
+          <template #header>
+            <h2 class="text-sm font-semibold">Poids</h2>
+          </template>
+          <div class="flex items-end gap-2 lg:max-w-md">
+            <div class="flex-1">
+              <label class="mb-1.5 block text-xs text-muted">Poids du jour (kg)</label>
+              <UInput v-model.number="newWeight" type="number" step="0.1" placeholder="ex : 78.5" />
+            </div>
+            <UButton
+              icon="i-lucide-plus"
+              color="primary"
+              :loading="savingWeight"
+              :disabled="!newWeight"
+              @click="saveWeight"
+            >
+              Ajouter
+            </UButton>
+          </div>
+          <div v-if="stats.weights.length" class="mt-4 h-48 lg:h-56">
+            <LineChart :data="weightChart" :options="baseOptions" />
+          </div>
+        </UCard>
+      </div>
     </template>
   </div>
 </template>

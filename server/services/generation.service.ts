@@ -1,7 +1,9 @@
 import type AnthropicSDK from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import {
+  estimateSessionSeconds,
   exerciseSchema,
+  SESSION_CATEGORY_META,
   workoutSessionSchema,
   type Exercise,
   type WorkoutSession,
@@ -27,6 +29,28 @@ const EXERCISE_TOOL = {
   }) as AnthropicSDK.Tool.InputSchema,
 }
 
+/**
+ * Description des catégories injectée dans le prompt, dérivée de SESSION_CATEGORY_META :
+ * l'intention de chaque catégorie n'est décrite qu'à un seul endroit (source de vérité unique).
+ */
+export const CATEGORY_GUIDE = Object.entries(SESSION_CATEGORY_META)
+  .map(([key, meta]) => `- ${key} (${meta.label}) : ${meta.intent}`)
+  .join('\n')
+
+/** Description des focus (thèmes techniques) proposables. */
+const FOCUS_GUIDE = [
+  '- fondations : garde, posture, appuis, respiration, jab (1) et cross (2) propres.',
+  '- jeu_de_jambes : déplacements, pivots, entrées/sorties, gestion de la distance.',
+  '- defense : garde haute, esquives (slip, roulement), blocages, retour de coup.',
+  '- crochets : crochets avant/arrière (3, 4), rotation du buste et des appuis.',
+  '- uppercuts : uppercuts avant/arrière (5, 6), travail à distance courte.',
+  '- combinaisons : enchaînements de 3 coups et plus, fluidité et rythme.',
+  '- puissance : frappes engagées au sac, transfert de poids (volume maîtrisé).',
+  '- corps : travail au corps (plexus, flancs), changements de niveau.',
+  '- cardio : densité et endurance de frappe, peu de nouveauté technique.',
+  '- gainage : ceinture abdominale et renforcement au poids du corps au service de la frappe.',
+].join('\n')
+
 export const SYSTEM_PROMPT = `Tu es un coach de boxe anglaise expert, spécialisé dans l'entraînement au sac de frappe à domicile pour la remise en forme et la perte de gras. Tu conçois des séances matinales sûres, progressives et motivantes. Tu tutoies l'utilisateur et écris exclusivement en français.
 
 PUBLIC & MATÉRIEL
@@ -35,11 +59,33 @@ PUBLIC & MATÉRIEL
 - Niveau DÉBUTANT en boxe anglaise : poings uniquement (jab, cross, crochets, uppercuts). JAMAIS de coups de pied, genoux ou coudes.
 - Objectif principal : cardio et perte de gras, tout en construisant des bases techniques propres et une bonne garde.
 
-STRUCTURE OBLIGATOIRE DE CHAQUE SÉANCE (dans cet ordre)
-1. echauffement : mobilité articulaire + montée cardiaque progressive + shadow léger. Sans matériel, sans impact violent.
-2. technique : apprentissage / répétition de combos numérotés au sac, à intensité contrôlée, en soignant l'exécution.
-3. cardio : gros bloc type HIIT au sac + poids du corps, pour la dépense énergétique (c'est le cœur de l'objectif).
-4. retour_au_calme : étirements, respiration, récupération.
+CATÉGORIE = STRUCTURE DE LA SÉANCE
+Le champ "category" définit le TYPE de séance et pilote sa structure et son intensité :
+${CATEGORY_GUIDE}
+
+RÈGLES DE STRUCTURE
+- Commence TOUJOURS par un bloc "echauffement" (mobilité articulaire, montée cardiaque progressive, shadow léger ; sans matériel, sans impact violent).
+- Termine TOUJOURS par un bloc "retour_au_calme" (étirements, respiration, récupération).
+- ENTRE LES DEUX, la structure n'est PAS figée : compose les blocs (technique / cardio / renforcement) — leur nombre, leur ordre et leur poids relatif — d'après l'intention de la catégorie décrite ci-dessus. Ne plaque jamais un schéma unique sur toutes les séances.
+- Une séance "recuperation" ne contient AUCUN bloc à haute intensité ; une séance "cardio" fait du bloc cardio le cœur de la séance ; une séance "apprentissage" fait du bloc technique le cœur de la séance ; etc.
+
+FOCUS = THÈME TECHNIQUE
+Le champ "focus" indique la dominante technique travaillée :
+${FOCUS_GUIDE}
+Le focus irrigue le bloc technique et, quand c'est pertinent, les autres blocs. La catégorie dit COMMENT on travaille, le focus dit SUR QUOI.
+
+DEMANDE EXPLICITE DE L'UTILISATEUR
+- Si le contexte contient "demande.categorie", tu DOIS renvoyer EXACTEMENT cette valeur dans "category".
+- Si "demande.focus" est renseigné (non null), tu DOIS renvoyer EXACTEMENT cette valeur dans "focus" ; s'il est null, choisis toi-même le focus le plus pertinent.
+- Tiens compte de "demande.note" (envie ou contrainte du jour) si elle est présente.
+- Sans "demande", choisis toi-même la catégorie ET le focus les plus pertinents au vu de la mémoire et de l'historique.
+- Renvoie TOUJOURS "category" ET "focus".
+
+MÉMOIRE & PROGRESSION
+Le contexte fournit "memoire" : par focus et par catégorie déjà pratiqués, la dernière date, le nombre de jours écoulés et le nombre de fois travaillés ; plus "combosRecents", les combos vus dans les séances récentes.
+- Construis une VRAIE progression : reprends et complexifie ce qui est déjà acquis plutôt que de repartir de zéro.
+- Évite de resservir tels quels les combos de "combosRecents" : varie les enchaînements.
+- À défaut de demande explicite, privilégie les focus négligés depuis longtemps et les catégories peu vues.
 
 NOTATION DES COMBOS (boxe anglaise)
 1 = jab (bras avant) · 2 = cross / direct arrière · 3 = crochet avant · 4 = crochet arrière · 5 = uppercut avant · 6 = uppercut arrière.
@@ -47,20 +93,21 @@ Pour chaque exercice TECHNIQUE au sac, fournis le combo en notation chiffrée (c
 
 RÈGLES DE CONCEPTION
 - Respecte STRICTEMENT la durée cible fournie. La somme, sur tous les exercices, de rounds × (work + rest) + restAfterSec doit approcher la durée cible en secondes, sans la dépasser.
-- Intervalles réalistes pour un débutant : privilégie des rounds courts (ex : 20-40 s d'effort) avec repos suffisant. Le format peut s'inspirer du Tabata ou de mini-rounds. Adapte selon le bloc (technique = plus de repos, cardio = plus dense).
+- Intervalles réalistes pour un débutant : privilégie des rounds courts (ex : 20-40 s d'effort) avec repos suffisant. Le format peut s'inspirer du Tabata ou de mini-rounds. Adapte selon le bloc et la catégorie (technique = plus de repos, cardio = plus dense, récupération = très léger).
 - Progression : ajuste le volume, l'intensité et la complexité des combos selon l'historique et les derniers ressentis. Si les dernières séances ont été jugées trop dures (difficulté élevée, énergie basse, courbatures marquées), allège. Si trop faciles, intensifie et enrichis les combos.
 - Reprise en douceur après des séances ratées ou une coupure : ne saute pas d'étapes, réduis un peu l'intensité.
 - Sécurité : pour un débutant, insiste sur la posture, la garde, la respiration. Rien de dangereux. Tiens compte des contraintes/blessures indiquées (adapte ou évite les zones concernées).
 - Pédagogie : explications détaillées, claires, étape par étape. Pour chaque exercice, remplis "tips" (2 à 4 conseils concrets) et "commonMistakes" (1 à 3 erreurs fréquentes à éviter).
 - Variété : évite la monotonie d'une séance à l'autre tout en gardant une cohérence de progression.
-- "coachNote" : explique en 2-3 phrases motivantes POURQUOI cette séance aujourd'hui, en t'appuyant explicitement sur l'historique et les feedbacks (progression, récupération, points à travailler).
+- "coachNote" : explique en 2-3 phrases motivantes POURQUOI cette séance aujourd'hui, en t'appuyant explicitement sur la catégorie, le focus, l'historique et les feedbacks (progression, récupération, points à travailler).
 
-Réponds EXCLUSIVEMENT en appelant l'outil "proposer_seance".`
+Réponds EXCLUSIVEMENT en appelant l'outil demandé : "proposer_seance" pour une séance complète, "proposer_exercice" pour un exercice de remplacement.`
 
 interface HistoryEntry {
   date: string
   jour: string
   titre: string
+  categorie: string | null
   focus: string
   dureeCibleMin: number
   statut: string
@@ -76,6 +123,27 @@ interface HistoryEntry {
   exercices: { nom: string; difficulte: number | null; commentaire: string | null }[]
 }
 
+/** Ancienneté et fréquence d'un focus / d'une catégorie. */
+interface MemoryStat {
+  derniereDate: string
+  joursDepuis: number
+  nombre: number
+}
+
+interface MemorySummary {
+  parFocus: Record<string, MemoryStat>
+  parCategorie: Record<string, MemoryStat>
+  /** Combos vus dans les séances récentes (dédupliqués) : à ne pas resservir tels quels. */
+  combosRecents: string[]
+}
+
+/** Intention planifiée par l'utilisateur pour cette date. */
+interface GenerationRequest {
+  categorie: string
+  focus: string | null
+  note: string | null
+}
+
 export interface GenerationContext {
   date: string
   jour: string
@@ -84,7 +152,53 @@ export interface GenerationContext {
   reglages: Record<string, unknown>
   tendance: Record<string, unknown>
   poids: Record<string, unknown> | null
+  /** Présent uniquement si la date a été planifiée : le modèle doit la respecter. */
+  demande?: GenerationRequest
+  memoire: MemorySummary
   historique: HistoryEntry[]
+}
+
+/**
+ * Résume la mémoire d'entraînement : pour chaque focus et chaque catégorie déjà pratiqués,
+ * l'ancienneté et le nombre de répétitions, plus les combos récents. Sert la progression
+ * (reprendre les acquis) et la variété (ne pas resservir les mêmes enchaînements).
+ */
+function buildMemory(date: string, completed: Session[]): MemorySummary {
+  const parFocus: Record<string, MemoryStat> = {}
+  const parCategorie: Record<string, MemoryStat> = {}
+
+  const bump = (acc: Record<string, MemoryStat>, key: string | null, seanceDate: string) => {
+    if (!key) return
+    const stat = acc[key]
+    if (!stat) {
+      acc[key] = { derniereDate: seanceDate, joursDepuis: daysBetween(seanceDate, date), nombre: 1 }
+      return
+    }
+    stat.nombre += 1
+    if (seanceDate > stat.derniereDate) {
+      stat.derniereDate = seanceDate
+      stat.joursDepuis = daysBetween(seanceDate, date)
+    }
+  }
+
+  for (const s of completed) {
+    bump(parFocus, s.focus, s.date)
+    bump(parCategorie, s.category, s.date)
+  }
+
+  // `completed` est trié du plus récent au plus ancien : les 5 dernières séances suffisent.
+  const combosRecents = [
+    ...new Set(
+      completed
+        .slice(0, 5)
+        .flatMap((s) => s.structure?.blocks ?? [])
+        .flatMap((b) => b.exercises)
+        .map((e) => e.combo)
+        .filter((combo): combo is string => Boolean(combo)),
+    ),
+  ]
+
+  return { parFocus, parCategorie, combosRecents }
 }
 
 /** Rassemble tout le contexte nécessaire à la génération d'une séance pour `date`. */
@@ -96,7 +210,8 @@ export function buildGenerationContext(date: string): {
   const profileRow = getProfile()
 
   const allCompleted = listCompletedSessions()
-  const recent = allCompleted.filter((s) => s.date !== date).slice(0, 8)
+  const past = allCompleted.filter((s) => s.date !== date)
+  const recent = past.slice(0, 8)
 
   const ids = recent.map((s) => s.id)
   const sFeedback = listSessionFeedbackByIds(ids)
@@ -111,6 +226,7 @@ export function buildGenerationContext(date: string): {
       date: s.date,
       jour: weekdayLabel(s.date),
       titre: s.title,
+      categorie: s.category,
       focus: s.focus,
       dureeCibleMin: s.targetDurationMin,
       statut: s.status,
@@ -175,7 +291,14 @@ export function buildGenerationContext(date: string): {
       joursDepuisDerniereSeance: derniere ? daysBetween(derniere, date) : null,
     },
     poids,
+    memoire: buildMemory(date, past),
     historique,
+  }
+
+  // Séance planifiée à l'avance : le modèle doit respecter la catégorie/le focus demandés.
+  const plan = getPlan(date)
+  if (plan) {
+    context.demande = { categorie: plan.category, focus: plan.focus, note: plan.note }
   }
 
   return { settingsRow, context }
@@ -194,17 +317,28 @@ export async function generateSessionForDate(
 
   const { settingsRow, context } = buildGenerationContext(date)
 
+  const { demande } = context
   const userPrompt = [
     `Nous sommes le ${formatDateFr(date)}. Prépare ma séance de boxe du jour.`,
     ``,
     `Durée cible : ${context.dureeCibleMin} minutes (à ne pas dépasser).`,
+    ...(demande
+      ? [
+          ``,
+          `J'ai planifié cette séance : catégorie « ${demande.categorie} »` +
+            (demande.focus
+              ? `, focus « ${demande.focus} ». Respecte EXACTEMENT ces deux valeurs.`
+              : `, focus libre (choisis le plus pertinent). Respecte EXACTEMENT la catégorie.`),
+          ...(demande.note ? [`Ma note pour cette séance : ${demande.note}`] : []),
+        ]
+      : []),
     ``,
-    `Voici mon profil, mes réglages et mon historique récent (au format JSON) :`,
+    `Voici mon profil, mes réglages, ma mémoire d'entraînement et mon historique récent (au format JSON) :`,
     '```json',
     JSON.stringify(context, null, 2),
     '```',
     ``,
-    `Conçois la séance en respectant la structure et les règles, et appelle l'outil "proposer_seance".`,
+    `Conçois la séance en adaptant la structure à la catégorie, en respectant les règles, et appelle l'outil "proposer_seance".`,
   ].join('\n')
 
   const client = useAnthropic()
@@ -253,11 +387,13 @@ export async function generateSessionForDate(
     date,
     status: 'generated',
     title: session.title,
+    category: session.category,
     focus: session.focus,
     summary: session.summary,
     coachNote: session.coachNote,
     targetDurationMin: settingsRow.targetDurationMin,
-    estimatedDurationMin: session.estimatedDurationMin,
+    // Durée réellement induite par les intervalles : source de vérité (le modèle s'en écarte souvent).
+    estimatedDurationMin: Math.max(1, Math.round(estimateSessionSeconds(session) / 60)),
     structure: session,
     aiModel: settingsRow.aiModel,
     generationContext: context,

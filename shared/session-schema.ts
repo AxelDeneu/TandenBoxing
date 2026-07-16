@@ -69,12 +69,42 @@ export const blockSchema = z.object({
   exercises: z.array(exerciseSchema).min(1),
 })
 
-export const workoutFocus = z.enum(['cardio', 'technique', 'mixte', 'recuperation'])
+/**
+ * Catégorie (type / intention pédagogique) de la séance — pilote sa STRUCTURE.
+ * L'axe « catégorie » est distinct de l'axe « focus » (thème technique).
+ */
+export const sessionCategory = z.enum([
+  'apprentissage',
+  'renforcement',
+  'enchainement',
+  'cardio',
+  'recuperation',
+])
+
+/**
+ * Focus (thème technique) de la séance. Élargi pour couvrir un vrai programme de
+ * boxe anglaise débutant. Les valeurs héritées (`technique`, `mixte`) restent tolérées
+ * à l'affichage (voir FOCUS_META) mais ne sont plus proposées à la génération.
+ */
+export const workoutFocus = z.enum([
+  'fondations',
+  'jeu_de_jambes',
+  'defense',
+  'crochets',
+  'uppercuts',
+  'combinaisons',
+  'puissance',
+  'corps',
+  'cardio',
+  'gainage',
+])
 
 export const workoutSessionSchema = z.object({
   /** Titre accrocheur de la séance du jour. */
   title: z.string().min(1),
-  /** Dominante de la séance. */
+  /** Catégorie (type) de la séance : pilote la structure. */
+  category: sessionCategory,
+  /** Dominante technique (thème) de la séance. */
   focus: workoutFocus,
   /** Résumé en 1-2 phrases de ce qui attend l'utilisateur. */
   summary: z.string().min(1),
@@ -93,6 +123,7 @@ export type Exercise = z.infer<typeof exerciseSchema>
 export type ExerciseCategory = z.infer<typeof exerciseCategory>
 export type WorkoutBlock = z.infer<typeof blockSchema>
 export type BlockType = z.infer<typeof blockType>
+export type SessionCategory = z.infer<typeof sessionCategory>
 export type WorkoutFocus = z.infer<typeof workoutFocus>
 export type WorkoutSession = z.infer<typeof workoutSessionSchema>
 
@@ -103,6 +134,88 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   cardio: 'Cardio',
   renforcement: 'Renforcement',
   retour_au_calme: 'Retour au calme',
+}
+
+interface CategoryMeta {
+  label: string
+  icon: string
+  iconClass: string
+  /** Comment cette catégorie oriente la structure/l'intensité (repris dans le prompt IA). */
+  intent: string
+}
+
+/**
+ * Métadonnées d'affichage + intention de chaque catégorie de séance.
+ * `intent` est aussi injecté dans le prompt de génération (source de vérité unique).
+ */
+export const SESSION_CATEGORY_META: Record<SessionCategory, CategoryMeta> = {
+  apprentissage: {
+    label: 'Apprentissage',
+    icon: 'i-lucide-graduation-cap',
+    iconClass: 'text-sky-400',
+    intent:
+      "Découvrir ou décortiquer une technique / un combo. Gros bloc technique à intensité contrôlée, tempo lent, explications très détaillées ; cardio léger à modéré.",
+  },
+  renforcement: {
+    label: 'Renforcement',
+    icon: 'i-lucide-dumbbell',
+    iconClass: 'text-amber-400',
+    intent:
+      "Consolider des techniques DÉJÀ vues : plus de volume et de répétitions propres, intensité moyenne à haute, gainage/renforcement au poids du corps.",
+  },
+  enchainement: {
+    label: 'Enchaînement',
+    icon: 'i-lucide-link',
+    iconClass: 'text-violet-400',
+    intent:
+      "Relier des combos connus en séquences fluides plus longues. Tempo élevé, transitions travaillées, pont entre technique et cardio.",
+  },
+  cardio: {
+    label: 'Cardio',
+    icon: 'i-lucide-heart-pulse',
+    iconClass: 'text-rose-400',
+    intent:
+      "Conditionnement et dépense énergétique : gros bloc HIIT au sac + poids du corps, peu de nouveauté technique.",
+  },
+  recuperation: {
+    label: 'Récupération',
+    icon: 'i-lucide-leaf',
+    iconClass: 'text-emerald-400',
+    intent:
+      "Récupération active : mobilité, shadow très léger, respiration, étirements. AUCUN gros bloc HIIT, intensité basse.",
+  },
+}
+
+/**
+ * Métadonnées d'affichage des focus (thèmes techniques). Inclut les valeurs héritées
+ * (`technique`, `mixte`, `recuperation`) pour l'affichage des anciennes séances.
+ */
+export const FOCUS_META: Record<string, { label: string; icon: string }> = {
+  fondations: { label: 'Fondations', icon: 'i-lucide-anchor' },
+  jeu_de_jambes: { label: 'Jeu de jambes', icon: 'i-lucide-footprints' },
+  defense: { label: 'Défense', icon: 'i-lucide-shield' },
+  crochets: { label: 'Crochets', icon: 'i-lucide-redo-2' },
+  uppercuts: { label: 'Uppercuts', icon: 'i-lucide-arrow-up' },
+  combinaisons: { label: 'Combinaisons', icon: 'i-lucide-layers' },
+  puissance: { label: 'Puissance', icon: 'i-lucide-flame' },
+  corps: { label: 'Corps', icon: 'i-lucide-target' },
+  cardio: { label: 'Cardio', icon: 'i-lucide-heart-pulse' },
+  gainage: { label: 'Gainage', icon: 'i-lucide-dumbbell' },
+  // Valeurs héritées (anciennes séances) :
+  technique: { label: 'Technique', icon: 'i-lucide-target' },
+  mixte: { label: 'Mixte', icon: 'i-lucide-layers' },
+  recuperation: { label: 'Récupération', icon: 'i-lucide-leaf' },
+}
+
+/** Libellé FR d'un focus (tolérant aux valeurs inconnues). */
+export function focusLabel(focus: string): string {
+  return FOCUS_META[focus]?.label ?? focus
+}
+
+/** Libellé FR d'une catégorie (tolérant aux valeurs nulles/inconnues). */
+export function categoryLabel(category: string | null | undefined): string | null {
+  if (!category) return null
+  return SESSION_CATEGORY_META[category as SessionCategory]?.label ?? category
 }
 
 /** Notation numérotée standard de la boxe anglaise (pour l'aide à l'affichage). */

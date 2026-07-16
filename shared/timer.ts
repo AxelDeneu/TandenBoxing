@@ -11,6 +11,10 @@ export interface TimerPhase {
   category?: string
   round?: number
   totalRounds?: number
+  /** Index du bloc source dans la séance (pour retrouver l'exercice et son guide). */
+  blockIndex: number
+  /** Index de l'exercice source dans le bloc (pour retrouver son guide). */
+  exerciseIndex: number
 }
 
 export const PREPARE_SECONDS = 10
@@ -22,8 +26,8 @@ export const PREPARE_SECONDS = 10
 export function buildTimerPhases(session: WorkoutSession): TimerPhase[] {
   const phases: TimerPhase[] = []
 
-  for (const block of session.blocks) {
-    block.exercises.forEach((ex) => {
+  session.blocks.forEach((block, blockIndex) => {
+    block.exercises.forEach((ex, exerciseIndex) => {
       phases.push({
         kind: 'prepare',
         seconds: PREPARE_SECONDS,
@@ -31,6 +35,8 @@ export function buildTimerPhases(session: WorkoutSession): TimerPhase[] {
         sublabel: ex.combo ? `${ex.combo} — ${comboToText(ex.combo)}` : block.title,
         blockTitle: block.title,
         category: ex.category,
+        blockIndex,
+        exerciseIndex,
       })
 
       for (let r = 1; r <= ex.intervals.rounds; r++) {
@@ -43,6 +49,8 @@ export function buildTimerPhases(session: WorkoutSession): TimerPhase[] {
           category: ex.category,
           round: r,
           totalRounds: ex.intervals.rounds,
+          blockIndex,
+          exerciseIndex,
         })
 
         if (r < ex.intervals.rounds && ex.intervals.rest > 0) {
@@ -52,6 +60,8 @@ export function buildTimerPhases(session: WorkoutSession): TimerPhase[] {
             label: 'Repos',
             sublabel: `${ex.name} — round ${r + 1}/${ex.intervals.rounds}`,
             blockTitle: block.title,
+            blockIndex,
+            exerciseIndex,
           })
         }
       }
@@ -63,10 +73,12 @@ export function buildTimerPhases(session: WorkoutSession): TimerPhase[] {
           label: 'Repos',
           sublabel: 'Exercice suivant',
           blockTitle: block.title,
+          blockIndex,
+          exerciseIndex,
         })
       }
     })
-  }
+  })
 
   // Pas de repos traînant en fin de séance.
   while (phases.length && phases[phases.length - 1]!.kind === 'rest') phases.pop()

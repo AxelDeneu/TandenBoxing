@@ -73,112 +73,125 @@ async function save() {
   <div class="space-y-6 p-4">
     <h1 class="text-2xl font-bold">Réglages</h1>
 
-    <!-- Entraînement -->
-    <UCard>
-      <template #header>
-        <h2 class="flex items-center gap-2 font-semibold">
-          <UIcon name="i-lucide-calendar-days" class="size-5 text-primary" /> Entraînement
-        </h2>
-      </template>
-      <div class="space-y-4">
-        <div>
-          <label class="mb-2 block text-sm font-medium">Jours d'entraînement</label>
-          <WeekdayPicker v-model="form.trainingDays" />
-        </div>
-        <div class="grid grid-cols-2 gap-3">
+    <!-- Cartes empilées en mobile, 2 colonnes en desktop -->
+    <div class="grid gap-6 lg:grid-cols-2 lg:items-start">
+      <!-- Entraînement -->
+      <UCard>
+        <template #header>
+          <h2 class="flex items-center gap-2 font-semibold">
+            <UIcon name="i-lucide-calendar-days" class="size-5 text-primary" /> Entraînement
+          </h2>
+        </template>
+        <div class="space-y-4">
           <div>
-            <label class="mb-1.5 block text-sm font-medium">Heure de génération</label>
-            <UInput v-model="form.generationTime" type="time" />
+            <label class="mb-2 block text-sm font-medium">Jours d'entraînement</label>
+            <WeekdayPicker v-model="form.trainingDays" />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="mb-1.5 block text-sm font-medium">Heure de génération</label>
+              <UInput v-model="form.generationTime" type="time" />
+            </div>
+            <div>
+              <label class="mb-1.5 block text-sm font-medium">Durée cible</label>
+              <USelect v-model="form.targetDurationMin" :items="DURATIONS" />
+            </div>
           </div>
           <div>
-            <label class="mb-1.5 block text-sm font-medium">Durée cible</label>
-            <USelect v-model="form.targetDurationMin" :items="DURATIONS" />
+            <label class="mb-1.5 block text-sm font-medium">Fuseau horaire</label>
+            <UInput v-model="form.timezone" placeholder="Europe/Paris" />
           </div>
         </div>
-        <div>
-          <label class="mb-1.5 block text-sm font-medium">Fuseau horaire</label>
-          <UInput v-model="form.timezone" placeholder="Europe/Paris" />
-        </div>
-      </div>
-    </UCard>
+      </UCard>
 
-    <!-- IA -->
-    <UCard>
-      <template #header>
-        <h2 class="flex items-center gap-2 font-semibold">
-          <UIcon name="i-lucide-sparkles" class="size-5 text-primary" /> Génération IA
-        </h2>
-      </template>
-      <div>
-        <label class="mb-1.5 block text-sm font-medium">Modèle Anthropic</label>
-        <USelect v-model="form.aiModel" :items="MODELS" />
-        <p class="mt-1.5 text-xs text-dimmed">
-          1 génération par jour — le coût reste minime même avec Opus.
-        </p>
-      </div>
-    </UCard>
-
-    <!-- Profil -->
-    <UCard>
-      <template #header>
-        <h2 class="flex items-center gap-2 font-semibold">
-          <UIcon name="i-lucide-user" class="size-5 text-primary" /> Profil
-        </h2>
-      </template>
-      <div class="space-y-4">
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="mb-1.5 block text-sm font-medium">Niveau</label>
-            <USelect v-model="profileForm.level" :items="LEVELS" />
-          </div>
-          <div>
-            <label class="mb-1.5 block text-sm font-medium">Condition physique</label>
-            <USelect v-model="profileForm.fitnessLevel" :items="FITNESS" placeholder="—" />
-          </div>
-        </div>
+      <!-- IA -->
+      <UCard>
+        <template #header>
+          <h2 class="flex items-center gap-2 font-semibold">
+            <UIcon name="i-lucide-sparkles" class="size-5 text-primary" /> Génération IA
+          </h2>
+        </template>
         <div>
-          <label class="mb-1.5 block text-sm font-medium">Âge</label>
-          <UInput v-model.number="profileForm.age" type="number" placeholder="ex : 32" />
+          <label class="mb-1.5 block text-sm font-medium">Modèle Anthropic</label>
+          <USelect v-model="form.aiModel" :items="MODELS" />
+          <p class="mt-1.5 text-xs text-dimmed">
+            1 génération par jour — le coût reste minime même avec Opus.
+          </p>
         </div>
-        <div>
-          <label class="mb-1.5 block text-sm font-medium">Blessures / limitations</label>
-          <UTextarea
-            v-model="profileForm.constraints"
-            :rows="2"
-            placeholder="ex : épaule droite sensible…"
-            class="w-full"
-          />
-        </div>
-      </div>
-    </UCard>
+      </UCard>
 
-    <!-- Options -->
-    <UCard>
-      <template #header>
-        <h2 class="flex items-center gap-2 font-semibold">
-          <UIcon name="i-lucide-sliders-horizontal" class="size-5 text-primary" /> Options
-        </h2>
-      </template>
-      <div class="space-y-4">
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <p class="text-sm font-medium">Suivi du poids</p>
-            <p class="text-xs text-muted">Affiche la saisie et la courbe de poids.</p>
+      <!-- Profil -->
+      <UCard>
+        <template #header>
+          <h2 class="flex items-center gap-2 font-semibold">
+            <UIcon name="i-lucide-user" class="size-5 text-primary" /> Profil
+          </h2>
+        </template>
+        <div class="space-y-4">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="mb-1.5 block text-sm font-medium">Niveau</label>
+              <USelect v-model="profileForm.level" :items="LEVELS" />
+            </div>
+            <div>
+              <label class="mb-1.5 block text-sm font-medium">Condition physique</label>
+              <USelect v-model="profileForm.fitnessLevel" :items="FITNESS" placeholder="—" />
+            </div>
           </div>
-          <USwitch v-model="form.weightTrackingEnabled" />
-        </div>
-        <div class="flex items-center justify-between gap-4 opacity-60">
           <div>
-            <p class="text-sm font-medium">Protection par mot de passe</p>
-            <p class="text-xs text-muted">À venir — l'appli est en accès libre.</p>
+            <label class="mb-1.5 block text-sm font-medium">Âge</label>
+            <UInput v-model.number="profileForm.age" type="number" placeholder="ex : 32" />
           </div>
-          <USwitch :model-value="false" disabled />
+          <div>
+            <label class="mb-1.5 block text-sm font-medium">Blessures / limitations</label>
+            <UTextarea
+              v-model="profileForm.constraints"
+              :rows="2"
+              placeholder="ex : épaule droite sensible…"
+              class="w-full"
+            />
+          </div>
         </div>
-      </div>
-    </UCard>
+      </UCard>
 
-    <UButton block size="xl" color="primary" icon="i-lucide-save" :loading="saving" @click="save">
-      Enregistrer
-    </UButton>
+      <!-- Options -->
+      <UCard>
+        <template #header>
+          <h2 class="flex items-center gap-2 font-semibold">
+            <UIcon name="i-lucide-sliders-horizontal" class="size-5 text-primary" /> Options
+          </h2>
+        </template>
+        <div class="space-y-4">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <p class="text-sm font-medium">Suivi du poids</p>
+              <p class="text-xs text-muted">Affiche la saisie et la courbe de poids.</p>
+            </div>
+            <USwitch v-model="form.weightTrackingEnabled" />
+          </div>
+          <div class="flex items-center justify-between gap-4 opacity-60">
+            <div>
+              <p class="text-sm font-medium">Protection par mot de passe</p>
+              <p class="text-xs text-muted">À venir — l'appli est en accès libre.</p>
+            </div>
+            <USwitch :model-value="false" disabled />
+          </div>
+        </div>
+      </UCard>
+    </div>
+
+    <div class="lg:flex lg:justify-end">
+      <UButton
+        block
+        size="xl"
+        color="primary"
+        icon="i-lucide-save"
+        class="lg:w-auto"
+        :loading="saving"
+        @click="save"
+      >
+        Enregistrer
+      </UButton>
+    </div>
   </div>
 </template>

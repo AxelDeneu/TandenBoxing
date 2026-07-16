@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  categoryLabel,
   comboToText,
   estimateExerciseSeconds,
   estimateSessionSeconds,
+  focusLabel,
+  sessionCategory,
+  workoutFocus,
   workoutSessionSchema,
   type WorkoutSession,
 } from '../shared/session-schema'
@@ -56,7 +60,8 @@ describe('comboToText', () => {
 describe('workoutSessionSchema', () => {
   const valid = {
     title: 't',
-    focus: 'cardio',
+    category: 'apprentissage',
+    focus: 'uppercuts',
     summary: 's',
     coachNote: 'c',
     estimatedDurationMin: 40,
@@ -97,6 +102,32 @@ describe('workoutSessionSchema', () => {
     expect(workoutSessionSchema.safeParse({ ...valid, focus: 'xxx' }).success).toBe(false)
   })
 
+  it('exige une catégorie de séance', () => {
+    const { category: _omit, ...sansCategorie } = valid
+    expect(workoutSessionSchema.safeParse(sansCategorie).success).toBe(false)
+  })
+
+  it('rejette une catégorie invalide', () => {
+    expect(workoutSessionSchema.safeParse({ ...valid, category: 'xxx' }).success).toBe(false)
+  })
+
+  it('accepte les cinq catégories', () => {
+    for (const category of sessionCategory.options) {
+      expect(workoutSessionSchema.safeParse({ ...valid, category }).success).toBe(true)
+    }
+  })
+
+  it('accepte les nouveaux thèmes de focus', () => {
+    for (const focus of workoutFocus.options) {
+      expect(workoutSessionSchema.safeParse({ ...valid, focus }).success).toBe(true)
+    }
+  })
+
+  it('rejette les focus hérités qui ne sont plus générés (mixte, technique)', () => {
+    expect(workoutSessionSchema.safeParse({ ...valid, focus: 'mixte' }).success).toBe(false)
+    expect(workoutSessionSchema.safeParse({ ...valid, focus: 'technique' }).success).toBe(false)
+  })
+
   it('rejette des intervalles hors bornes (work < 5)', () => {
     const bad = {
       ...valid,
@@ -117,5 +148,28 @@ describe('workoutSessionSchema', () => {
       ],
     }
     expect(workoutSessionSchema.safeParse(bad).success).toBe(false)
+  })
+})
+
+describe('focusLabel / categoryLabel', () => {
+  it('libelle les nouveaux focus', () => {
+    expect(focusLabel('jeu_de_jambes')).toBe('Jeu de jambes')
+    expect(focusLabel('uppercuts')).toBe('Uppercuts')
+  })
+
+  // Rétro-compat : les séances générées avant l'élargissement de l'enum doivent rester lisibles.
+  it('libelle encore les focus hérités', () => {
+    expect(focusLabel('mixte')).toBe('Mixte')
+    expect(focusLabel('technique')).toBe('Technique')
+  })
+
+  it('retombe sur la valeur brute pour un focus inconnu', () => {
+    expect(focusLabel('inconnu')).toBe('inconnu')
+  })
+
+  it('libelle les catégories et tolère null (anciennes séances)', () => {
+    expect(categoryLabel('enchainement')).toBe('Enchaînement')
+    expect(categoryLabel(null)).toBeNull()
+    expect(categoryLabel(undefined)).toBeNull()
   })
 })
