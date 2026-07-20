@@ -21,13 +21,18 @@ const SORENESS_ZONES = [
   'Aucune',
 ]
 
+/** Durée mesurée par le timer (`?duree=` en secondes) — absente si la séance a été notée à la main. */
+const timedSeconds = Number(route.query.duree)
+const timedMinutes =
+  Number.isFinite(timedSeconds) && timedSeconds > 0 ? Math.round(timedSeconds / 60) : null
+
 const form = reactive({
   overallDifficulty: null as number | null,
   energyLevel: null as number | null,
   enjoyment: null as number | null,
   soreness: [] as string[],
   comment: '',
-  actualDurationMin: null as number | null,
+  actualDurationMin: timedMinutes,
 })
 
 const exercises = ref(
@@ -183,6 +188,9 @@ async function submit() {
             placeholder="ex : 43"
             icon="i-lucide-clock"
           />
+          <p v-if="timedMinutes" class="mt-1.5 text-xs text-muted">
+            Mesurée par le timer, pauses déduites. Ajuste si besoin.
+          </p>
         </div>
         <div>
           <label class="mb-1.5 block text-sm font-medium">Commentaire (optionnel)</label>

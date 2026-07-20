@@ -6,7 +6,9 @@ const items = [
   { label: "Aujourd'hui", icon: 'i-lucide-dumbbell', to: '/' },
   { label: 'Planning', icon: 'i-lucide-calendar-days', to: '/planning' },
   { label: 'Historique', icon: 'i-lucide-history', to: '/historique' },
+  { label: 'Glossaire', icon: 'i-lucide-book-open', to: '/glossaire' },
   { label: 'Stats', icon: 'i-lucide-chart-line', to: '/stats' },
+  { label: 'Conso IA', icon: 'i-lucide-coins', to: '/conso' },
   { label: 'Réglages', icon: 'i-lucide-settings', to: '/reglages' },
 ]
 

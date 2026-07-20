@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { tokenizeGlossary } from '../shared/glossary'
+import { GLOSSARY, GLOSSARY_GROUPS, tokenizeGlossary } from '../shared/glossary'
 
 describe('tokenizeGlossary', () => {
   it('repère un terme et fournit son explication', () => {
@@ -40,5 +40,17 @@ describe('tokenizeGlossary', () => {
   it('gère la casse et les accents (Esquive)', () => {
     const seg = tokenizeGlossary('Fais une Esquive latérale.').find((s) => s.entry)
     expect(seg?.entry?.label).toBe('Esquive')
+  })
+})
+
+describe('GLOSSARY_GROUPS', () => {
+  it('couvre chaque terme du glossaire exactement une fois', () => {
+    const grouped = GLOSSARY_GROUPS.flatMap((g) => g.keys)
+    // Toutes les clés groupées existent dans GLOSSARY.
+    for (const key of grouped) expect(GLOSSARY[key], `clé inconnue: ${key}`).toBeDefined()
+    // Pas de doublon entre groupes.
+    expect(new Set(grouped).size).toBe(grouped.length)
+    // Chaque terme du glossaire est rangé quelque part.
+    expect(new Set(grouped)).toEqual(new Set(Object.keys(GLOSSARY)))
   })
 })

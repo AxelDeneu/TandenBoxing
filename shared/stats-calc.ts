@@ -41,3 +41,51 @@ export function computeWeeklyBuckets(
   }
   return buckets
 }
+
+/**
+ * Nombre de séances complétées par mois calendaire, sur les `months` derniers mois,
+ * du plus ancien au plus récent. Le mois est au format « YYYY-MM ».
+ */
+export function computeMonthlyBuckets(
+  completedDates: string[],
+  today: string,
+  months = 6,
+): { month: string; count: number }[] {
+  const [y, m] = today.split('-').map(Number)
+  const base = (y ?? 1970) * 12 + ((m ?? 1) - 1)
+  const buckets: { month: string; count: number }[] = []
+  for (let i = months - 1; i >= 0; i--) {
+    const total = base - i
+    const prefix = `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`
+    buckets.push({ month: prefix, count: completedDates.filter((d) => d.startsWith(prefix)).length })
+  }
+  return buckets
+}
+
+/**
+ * Plus longue série historique de jours d'entraînement consécutifs complétés,
+ * entre `fromDate` et `today` (record, indépendant de la série en cours).
+ */
+export function computeLongestStreak(
+  completedDates: Set<string>,
+  trainingDays: number[],
+  fromDate: string,
+  today: string,
+  maxDays = 1095,
+): number {
+  if (!trainingDays.length || fromDate > today) return 0
+  let best = 0
+  let current = 0
+  for (let i = 0; i <= maxDays; i++) {
+    const day = addDays(fromDate, i)
+    if (day > today) break
+    if (!trainingDays.includes(isoWeekday(day))) continue
+    if (completedDates.has(day)) {
+      current += 1
+      if (current > best) best = current
+    } else {
+      current = 0
+    }
+  }
+  return best
+}

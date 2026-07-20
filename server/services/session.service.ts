@@ -182,6 +182,34 @@ export interface FeedbackPayload {
   }[]
 }
 
+/**
+ * Marque une séance comme sautée (non faite). La raison est stockée comme feedback global
+ * (completed=false), ce qui la fait remonter au contexte IA pour adapter les séances suivantes.
+ */
+export function skipSession(date: string, reason: string | null): Session {
+  const row = loadSessionOrThrow(date)
+
+  upsertSessionFeedback(row.id, {
+    completed: false,
+    overallDifficulty: null,
+    energyLevel: null,
+    soreness: [],
+    enjoyment: null,
+    comment: reason,
+    actualDurationSec: null,
+  })
+
+  // Le statut change : les recommandations en cache sont périmées.
+  clearRecommendationCache()
+
+  return updateSessionByDate(date, {
+    status: 'skipped',
+    startedAt: null,
+    completedAt: null,
+    actualDurationSec: null,
+  })
+}
+
 /** Enregistre le feedback d'une séance et la clôt. */
 export function submitFeedback(date: string, payload: FeedbackPayload): Session {
   const row = loadSessionOrThrow(date)

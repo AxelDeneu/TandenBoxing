@@ -193,5 +193,29 @@ async function save() {
         Enregistrer
       </UButton>
     </div>
+
+    <!-- Accès secondaires (repris dans la barre latérale en desktop). -->
+    <div class="grid gap-3 sm:grid-cols-2">
+      <NuxtLink
+        to="/glossaire"
+        class="flex items-center gap-3 rounded-xl border border-default p-4 transition-colors hover:border-primary/40"
+      >
+        <UIcon name="i-lucide-book-open" class="size-5 text-primary" />
+        <div>
+          <p class="text-sm font-medium">Glossaire</p>
+          <p class="text-xs text-muted">Les termes de boxe expliqués</p>
+        </div>
+      </NuxtLink>
+      <NuxtLink
+        to="/conso"
+        class="flex items-center gap-3 rounded-xl border border-default p-4 transition-colors hover:border-primary/40"
+      >
+        <UIcon name="i-lucide-coins" class="size-5 text-primary" />
+        <div>
+          <p class="text-sm font-medium">Consommation IA</p>
+          <p class="text-xs text-muted">Tokens & coût estimé</p>
+        </div>
+      </NuxtLink>
+    </div>
   </div>
 </template>

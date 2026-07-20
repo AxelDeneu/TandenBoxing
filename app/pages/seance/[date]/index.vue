@@ -3,6 +3,7 @@ import type { ApiSession, SessionCategory } from '~/utils/session'
 
 interface SessionDetail extends ApiSession {
   feedback: {
+    completed: boolean
     overallDifficulty: number | null
     energyLevel: number | null
     enjoyment: number | null
@@ -15,7 +16,7 @@ interface SessionDetail extends ApiSession {
 
 const route = useRoute()
 const date = route.params.date as string
-const { data, error } = await useFetch<SessionDetail>(`/api/sessions/${date}`)
+const { data, error, refresh } = await useFetch<SessionDetail>(`/api/sessions/${date}`)
 
 useHead({ title: () => data.value?.structure.title ?? 'Séance' })
 
@@ -26,10 +27,41 @@ const categoryMeta = computed(() =>
     ? (SESSION_CATEGORY_META[data.value.category as SessionCategory] ?? null)
     : null,
 )
+const isCompleted = computed(() => data.value?.status === 'completed')
+const isSkipped = computed(() => data.value?.status === 'skipped')
+// Un vrai feedback (séance faite) — à distinguer du marqueur d'une séance sautée (completed=false).
+const ratedFeedback = computed(() => (data.value?.feedback?.completed ? data.value.feedback : null))
+
 const showReschedule = ref(false)
 const showDelete = ref(false)
+const showSkip = ref(false)
 const deleteLoading = ref(false)
+const skipLoading = ref(false)
+const skipReason = ref('')
 const toast = useToast()
+
+async function markSkipped() {
+  skipLoading.value = true
+  try {
+    await $fetch(`/api/sessions/${date}/skip`, {
+      method: 'POST',
+      body: { reason: skipReason.value.trim() || null },
+    })
+    showSkip.value = false
+    skipReason.value = ''
+    await refresh()
+    toast.add({ title: 'Séance marquée comme sautée', icon: 'i-lucide-calendar-off', color: 'success' })
+  } catch (e: any) {
+    toast.add({
+      title: 'Échec',
+      description: e?.data?.statusMessage ?? e?.message,
+      color: 'error',
+      icon: 'i-lucide-triangle-alert',
+    })
+  } finally {
+    skipLoading.value = false
+  }
+}
 
 async function deleteSession() {
   deleteLoading.value = true
@@ -93,12 +125,20 @@ async function deleteSession() {
               {{ FOCUS_META[data.focus]?.label ?? data.focus }}
             </UBadge>
             <UBadge
-              v-if="data.status === 'completed'"
+              v-if="isCompleted"
               color="success"
               variant="soft"
               icon="i-lucide-check"
             >
               Terminée
+            </UBadge>
+            <UBadge
+              v-else-if="isSkipped"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-calendar-off"
+            >
+              Sautée
             </UBadge>
           </div>
           <h2 class="text-xl font-bold leading-tight">{{ data.structure.title }}</h2>
@@ -116,8 +156,22 @@ async function deleteSession() {
         </div>
       </UCard>
 
-      <!-- Récap feedback -->
-      <UCard v-if="data.feedback">
+      <!-- Séance sautée : rappel de la raison -->
+      <UCard v-if="isSkipped">
+        <div class="flex items-start gap-3">
+          <UIcon name="i-lucide-calendar-off" class="mt-0.5 size-5 shrink-0 text-amber-400" />
+          <div>
+            <p class="text-sm font-medium">Séance sautée</p>
+            <p v-if="data.feedback?.comment" class="mt-1 text-sm text-muted">
+              « {{ data.feedback.comment }} »
+            </p>
+            <p v-else class="mt-1 text-sm text-muted">Marquée comme non faite.</p>
+          </div>
+        </div>
+      </UCard>
+
+      <!-- Récap feedback (séance réellement faite et notée) -->
+      <UCard v-if="ratedFeedback">
         <template #header>
           <h2 class="flex items-center gap-2 text-sm font-semibold">
             <UIcon name="i-lucide-clipboard-check" class="size-4 text-primary" /> Ton feedback
@@ -182,6 +236,28 @@ async function deleteSession() {
       </UButton>
 
       <UButton
+        v-if="!isCompleted && !isSkipped"
+        block
+        color="primary"
+        variant="soft"
+        icon="i-lucide-clipboard-check"
+        :to="`/seance/${data.date}/feedback`"
+      >
+        Noter la séance
+      </UButton>
+
+      <UButton
+        v-if="!isCompleted && !isSkipped"
+        block
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-calendar-off"
+        @click="showSkip = true"
+      >
+        Marquer comme sautée
+      </UButton>
+
+      <UButton
         block
         color="neutral"
         variant="ghost"
@@ -200,6 +276,34 @@ async function deleteSession() {
       >
         Supprimer la séance
       </UButton>
+
+      <UModal
+        v-model:open="showSkip"
+        title="Marquer la séance comme sautée ?"
+        description="Elle sera enregistrée comme non faite. La raison aide ton coach à adapter la suite."
+      >
+        <template #body>
+          <UTextarea
+            v-model="skipReason"
+            :rows="3"
+            placeholder="Raison (optionnel) : pas eu le temps, fatigue, petite douleur…"
+            class="w-full"
+          />
+        </template>
+        <template #footer>
+          <div class="flex w-full justify-end gap-2">
+            <UButton color="neutral" variant="ghost" @click="showSkip = false">Annuler</UButton>
+            <UButton
+              color="primary"
+              icon="i-lucide-calendar-off"
+              :loading="skipLoading"
+              @click="markSkipped"
+            >
+              Marquer sautée
+            </UButton>
+          </div>
+        </template>
+      </UModal>
 
       <RescheduleModal
         v-model:open="showReschedule"

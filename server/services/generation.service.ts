@@ -86,6 +86,7 @@ Le contexte fournit "memoire" : par focus et par catégorie déjà pratiqués, l
 - Construis une VRAIE progression : reprends et complexifie ce qui est déjà acquis plutôt que de repartir de zéro.
 - Évite de resservir tels quels les combos de "combosRecents" : varie les enchaînements.
 - À défaut de demande explicite, privilégie les focus négligés depuis longtemps et les catégories peu vues.
+- Le contexte peut contenir "seancesSautees" (séances récemment non faites, avec la raison éventuelle) : tiens-en compte — reprise en douceur après une coupure, et allègement si la raison évoque une fatigue ou une blessure.
 
 NOTATION DES COMBOS (boxe anglaise)
 1 = jab (bras avant) · 2 = cross / direct arrière · 3 = crochet avant · 4 = crochet arrière · 5 = uppercut avant · 6 = uppercut arrière.
@@ -102,6 +103,39 @@ RÈGLES DE CONCEPTION
 - "coachNote" : explique en 2-3 phrases motivantes POURQUOI cette séance aujourd'hui, en t'appuyant explicitement sur la catégorie, le focus, l'historique et les feedbacks (progression, récupération, points à travailler).
 
 Réponds EXCLUSIVEMENT en appelant l'outil demandé : "proposer_seance" pour une séance complète, "proposer_exercice" pour un exercice de remplacement.`
+
+/**
+ * Prompt système en bloc unique marqué pour le cache : ce préfixe (outils + système) est
+ * strictement statique, donc réutilisable d'un appel à l'autre. Le cache Anthropic n'a d'effet
+ * qu'entre appels rapprochés (TTL 5 min) : régénération, ajustement, remplacement d'exercice —
+ * pas d'une génération quotidienne à l'autre. Il ne se déclenche qu'au-delà d'un préfixe minimal
+ * (4096 tokens pour Opus 4.8) ; en deçà, aucun effet (mais aucun surcoût non plus).
+ */
+const SYSTEM_BLOCKS: AnthropicSDK.TextBlockParam[] = [
+  { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+]
+
+/** Enregistre la consommation de tokens d'un appel (best-effort : n'interrompt jamais la génération). */
+function recordUsage(
+  response: AnthropicSDK.Message,
+  kind: 'seance' | 'exercice' | 'ajustement',
+  date: string | null,
+): void {
+  try {
+    const u = response.usage
+    recordAiUsage({
+      sessionDate: date,
+      kind,
+      model: response.model,
+      inputTokens: u.input_tokens ?? 0,
+      outputTokens: u.output_tokens ?? 0,
+      cacheCreationTokens: u.cache_creation_input_tokens ?? 0,
+      cacheReadTokens: u.cache_read_input_tokens ?? 0,
+    })
+  } catch (error) {
+    console.error('[generation] Enregistrement de la conso échoué :', error)
+  }
+}
 
 interface HistoryEntry {
   date: string
@@ -144,6 +178,15 @@ interface GenerationRequest {
   note: string | null
 }
 
+/** Séance récemment sautée (non faite), avec la raison éventuelle. */
+interface SkippedEntry {
+  date: string
+  jour: string
+  categorie: string | null
+  focus: string
+  raison: string | null
+}
+
 export interface GenerationContext {
   date: string
   jour: string
@@ -156,6 +199,8 @@ export interface GenerationContext {
   demande?: GenerationRequest
   memoire: MemorySummary
   historique: HistoryEntry[]
+  /** Séances récemment sautées, avec raison : signal de coaching (reprise en douceur, fatigue…). */
+  seancesSautees?: SkippedEntry[]
 }
 
 /**
@@ -295,6 +340,21 @@ export function buildGenerationContext(date: string): {
     historique,
   }
 
+  // Séances récemment sautées (avec raison) : reprise en douceur, allègement si fatigue/blessure.
+  const skipped = listRecentSessions(30)
+    .filter((s) => s.status === 'skipped' && s.date < date)
+    .slice(0, 5)
+  if (skipped.length) {
+    const skippedFb = listSessionFeedbackByIds(skipped.map((s) => s.id))
+    context.seancesSautees = skipped.map((s) => ({
+      date: s.date,
+      jour: weekdayLabel(s.date),
+      categorie: s.category,
+      focus: s.focus,
+      raison: skippedFb.find((f) => f.sessionId === s.id)?.comment ?? null,
+    }))
+  }
+
   // Séance planifiée à l'avance : le modèle doit respecter la catégorie/le focus demandés.
   const plan = getPlan(date)
   if (plan) {
@@ -310,12 +370,24 @@ export function buildGenerationContext(date: string): {
  */
 export async function generateSessionForDate(
   date: string,
-  options: { regenerate?: boolean } = {},
+  options: { regenerate?: boolean; adjustment?: string } = {},
 ): Promise<Session> {
   const existing = findSessionByDate(date)
-  if (existing && !options.regenerate) return existing
+  const adjustment = options.adjustment?.trim()
+  // Un ajustement régénère toujours ; sinon, une séance existante est renvoyée telle quelle.
+  if (existing && !options.regenerate && !adjustment) return existing
 
   const { settingsRow, context } = buildGenerationContext(date)
+
+  // Ajustement d'une séance existante : on verrouille son intention (catégorie + focus) pour que
+  // la consigne modifie la séance sans repartir de zéro sur un autre thème.
+  if (adjustment && existing?.category) {
+    context.demande = {
+      categorie: existing.category,
+      focus: existing.focus,
+      note: context.demande?.note ?? null,
+    }
+  }
 
   const { demande } = context
   const userPrompt = [
@@ -330,6 +402,17 @@ export async function generateSessionForDate(
               ? `, focus « ${demande.focus} ». Respecte EXACTEMENT ces deux valeurs.`
               : `, focus libre (choisis le plus pertinent). Respecte EXACTEMENT la catégorie.`),
           ...(demande.note ? [`Ma note pour cette séance : ${demande.note}`] : []),
+        ]
+      : []),
+    ...(adjustment && existing
+      ? [
+          ``,
+          `AJUSTEMENT DEMANDÉ. Voici ma séance actuelle (JSON) :`,
+          '```json',
+          JSON.stringify(existing.structure, null, 2),
+          '```',
+          `Repars de CETTE séance et applique ma consigne : « ${adjustment} ».`,
+          `Garde la même catégorie et le même focus, ainsi que tout ce que la consigne ne remet pas en cause ; ne change QUE ce qui est nécessaire pour la respecter.`,
         ]
       : []),
     ``,
@@ -348,7 +431,7 @@ export async function generateSessionForDate(
       {
         model: settingsRow.aiModel,
         max_tokens: 12_000,
-        system: SYSTEM_PROMPT,
+        system: SYSTEM_BLOCKS,
         tools: [SESSION_TOOL],
         tool_choice: { type: 'tool', name: SESSION_TOOL.name },
         messages: [{ role: 'user', content: userPrompt }],
@@ -362,6 +445,7 @@ export async function generateSessionForDate(
       statusMessage: 'La génération de la séance a échoué (erreur du modèle). Réessaie.',
     })
   }
+  recordUsage(response, adjustment ? 'ajustement' : 'seance', date)
 
   const toolUse = response.content.find(
     (block): block is AnthropicSDK.ToolUseBlock => block.type === 'tool_use',
@@ -433,7 +517,7 @@ export async function generateReplacementExercise(
       {
         model,
         max_tokens: 2000,
-        system: SYSTEM_PROMPT,
+        system: SYSTEM_BLOCKS,
         tools: [EXERCISE_TOOL],
         tool_choice: { type: 'tool', name: EXERCISE_TOOL.name },
         messages: [{ role: 'user', content: userPrompt }],
@@ -447,6 +531,7 @@ export async function generateReplacementExercise(
       statusMessage: "Le remplacement de l'exercice a échoué. Réessaie.",
     })
   }
+  recordUsage(response, 'exercice', null)
 
   const toolUse = response.content.find(
     (block): block is AnthropicSDK.ToolUseBlock => block.type === 'tool_use',
@@ -476,7 +561,10 @@ export function isGenerating(date: string): boolean {
   return inFlightGenerations.has(date)
 }
 
-export function triggerGeneration(date: string, options: { regenerate?: boolean } = {}): void {
+export function triggerGeneration(
+  date: string,
+  options: { regenerate?: boolean; adjustment?: string } = {},
+): void {
   if (inFlightGenerations.has(date)) return
   inFlightGenerations.add(date)
   generateSessionForDate(date, options)

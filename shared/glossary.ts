@@ -119,6 +119,40 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   },
 }
 
+export interface GlossaryGroup {
+  label: string
+  icon: string
+  /** Clés canoniques de GLOSSARY, dans l'ordre d'affichage. */
+  keys: string[]
+}
+
+/**
+ * Regroupement thématique des termes pour la page glossaire consultable.
+ * Chaque clé de GLOSSARY doit apparaître dans exactement un groupe (garde-fou testé).
+ */
+export const GLOSSARY_GROUPS: GlossaryGroup[] = [
+  {
+    label: 'Frappes',
+    icon: 'i-lucide-target',
+    keys: ['jab', 'cross', 'direct', 'crochet', 'uppercut'],
+  },
+  {
+    label: 'Défense & déplacement',
+    icon: 'i-lucide-shield',
+    keys: ['garde', 'esquive', 'pivot', 'footwork'],
+  },
+  {
+    label: 'Entraînement',
+    icon: 'i-lucide-activity',
+    keys: ['shadow boxing', 'hiit', 'tabata'],
+  },
+  {
+    label: 'Renforcement & cardio',
+    icon: 'i-lucide-dumbbell',
+    keys: ['gainage', 'squat', 'fente', 'burpee', 'mountain climber'],
+  },
+]
+
 /** Formes alternatives (pluriels, synonymes) → clé canonique. */
 const ALIASES: Record<string, string> = {
   jabs: 'jab',

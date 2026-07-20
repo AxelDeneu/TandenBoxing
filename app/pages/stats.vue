@@ -40,6 +40,80 @@ const weeklyOptions = {
   },
 }
 
+// Volume par focus : radar sur la liste canonique des 10 focus (révèle les thèmes négligés).
+const FOCUS_ORDER = [
+  'fondations',
+  'jeu_de_jambes',
+  'defense',
+  'crochets',
+  'uppercuts',
+  'combinaisons',
+  'puissance',
+  'corps',
+  'cardio',
+  'gainage',
+]
+const hasFocusData = computed(() =>
+  FOCUS_ORDER.some((f) => (stats.value?.byFocus?.[f] ?? 0) > 0),
+)
+const focusRadar = computed(() => ({
+  labels: FOCUS_ORDER.map((f) => FOCUS_META[f]?.label ?? f),
+  datasets: [
+    {
+      label: 'Séances',
+      data: FOCUS_ORDER.map((f) => stats.value?.byFocus?.[f] ?? 0),
+      backgroundColor: 'rgba(244,63,94,0.2)',
+      borderColor: '#f43f5e',
+      pointBackgroundColor: '#f43f5e',
+    },
+  ],
+}))
+const radarOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { display: false } },
+  scales: {
+    r: {
+      angleLines: { color: GRID },
+      grid: { color: GRID },
+      pointLabels: { color: TEXT, font: { size: 10 } },
+      ticks: { color: TEXT, backdropColor: 'transparent', precision: 0, font: { size: 9 } },
+      beginAtZero: true,
+    },
+  },
+}
+
+// Vue mensuelle (6 derniers mois).
+const MONTHS_SHORT = [
+  'janv.',
+  'févr.',
+  'mars',
+  'avr.',
+  'mai',
+  'juin',
+  'juil.',
+  'août',
+  'sept.',
+  'oct.',
+  'nov.',
+  'déc.',
+]
+function monthShort(ym: string): string {
+  const m = Number(ym.split('-')[1])
+  return MONTHS_SHORT[m - 1] ?? ym
+}
+const monthlyChart = computed(() => ({
+  labels: (stats.value?.monthlyCounts ?? []).map((m) => monthShort(m.month)),
+  datasets: [
+    {
+      label: 'Séances',
+      data: (stats.value?.monthlyCounts ?? []).map((m) => m.count),
+      backgroundColor: 'rgba(96,165,250,0.6)',
+      borderRadius: 6,
+    },
+  ],
+}))
+
 const trendChart = computed(() => ({
   labels: (stats.value?.difficultySeries ?? []).map((d) => formatDateShort(d.date)),
   datasets: [
@@ -136,6 +210,50 @@ async function saveWeight() {
         </div>
       </div>
 
+      <!-- Records -->
+      <UCard v-if="stats.records.longestStreak || stats.records.hardest || stats.records.bestMonth">
+        <template #header>
+          <h2 class="flex items-center gap-2 text-sm font-semibold">
+            <UIcon name="i-lucide-trophy" class="size-4 text-primary" /> Records
+          </h2>
+        </template>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div class="flex items-center gap-3">
+            <UIcon name="i-lucide-flame" class="size-6 shrink-0 text-primary" />
+            <div>
+              <p class="text-lg font-bold leading-none">{{ stats.records.longestStreak }}</p>
+              <p class="text-xs text-muted">Plus longue série</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <UIcon name="i-lucide-swords" class="size-6 shrink-0 text-primary" />
+            <div class="min-w-0">
+              <p class="text-lg font-bold leading-none">
+                {{ stats.records.hardest ? stats.records.hardest.difficulty + '/5' : '—' }}
+              </p>
+              <p class="truncate text-xs text-muted">
+                {{ stats.records.hardest ? 'Séance la plus dure' : 'Aucune notée' }}
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <UIcon name="i-lucide-calendar-check" class="size-6 shrink-0 text-primary" />
+            <div class="min-w-0">
+              <p class="text-lg font-bold leading-none">
+                {{ stats.records.bestMonth ? stats.records.bestMonth.count : '—' }}
+              </p>
+              <p class="truncate text-xs text-muted">
+                {{
+                  stats.records.bestMonth
+                    ? 'Meilleur mois (' + monthShort(stats.records.bestMonth.month) + ')'
+                    : 'Meilleur mois'
+                }}
+              </p>
+            </div>
+          </div>
+        </div>
+      </UCard>
+
       <!-- Graphiques : empilés en mobile, 2 colonnes en desktop -->
       <div class="grid gap-5 lg:grid-cols-2 lg:items-start">
         <!-- Régularité -->
@@ -146,6 +264,29 @@ async function saveWeight() {
           <div class="h-48 lg:h-56">
             <BarChart :data="weeklyChart" :options="weeklyOptions" />
           </div>
+        </UCard>
+
+        <!-- Vue mensuelle -->
+        <UCard>
+          <template #header>
+            <h2 class="text-sm font-semibold">Par mois (6 derniers)</h2>
+          </template>
+          <div class="h-48 lg:h-56">
+            <BarChart :data="monthlyChart" :options="weeklyOptions" />
+          </div>
+        </UCard>
+
+        <!-- Volume par focus -->
+        <UCard v-if="hasFocusData" class="lg:col-span-2">
+          <template #header>
+            <h2 class="text-sm font-semibold">Volume par focus technique</h2>
+          </template>
+          <div class="mx-auto h-64 max-w-md lg:h-72">
+            <RadarChart :data="focusRadar" :options="radarOptions" />
+          </div>
+          <p class="mt-2 text-center text-xs text-muted">
+            Les creux du radar sont les thèmes que tu travailles le moins.
+          </p>
         </UCard>
 
         <!-- Difficulté / énergie -->

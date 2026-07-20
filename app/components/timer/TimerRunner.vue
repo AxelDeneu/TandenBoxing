@@ -4,6 +4,7 @@ import type { WorkoutSession } from '~/utils/session'
 const props = defineProps<{ session: WorkoutSession; date: string }>()
 
 const {
+  phases,
   remaining,
   running,
   finished,
@@ -13,20 +14,34 @@ const {
   nextExercise,
   totalSeconds,
   elapsedSeconds,
+  activeSeconds,
   phaseProgress,
   overallProgress,
+  savedSnapshot,
+  restoreSnapshot,
+  discardSnapshot,
   toggle,
   skip,
   prev,
   stop,
   reset,
   start,
-} = useWorkoutTimer(props.session)
+} = useWorkoutTimer(props.session, props.date)
 
 const CIRC = 2 * Math.PI * 100
 
 // Sur mobile le guide est escamoté dans un slideover ; sur desktop il est toujours visible.
 const guideOpen = ref(false)
+
+// Séance interrompue (rechargement, crash, appel entrant) : on laisse l'utilisateur trancher.
+const resumeAt = computed(() => {
+  const snap = savedSnapshot.value
+  if (!snap) return null
+  return {
+    label: phases[snap.index]?.label ?? 'la séance',
+    done: formatDuration(snap.activeSeconds),
+  }
+})
 
 const kindStyle = computed(() => {
   if (finished.value)
@@ -58,6 +73,16 @@ onMounted(() => {
   $fetch(`/api/sessions/${props.date}/start`, { method: 'POST' }).catch(() => {})
 })
 
+const confirmExitOpen = ref(false)
+
+/** Une séance entamée ne se quitte pas sur une mauvaise tape — mais l'état reste repris. */
+function requestExit() {
+  if (finished.value || activeSeconds.value <= 0) {
+    exit()
+    return
+  }
+  confirmExitOpen.value = true
+}
 function exit() {
   stop()
   navigateTo('/')
@@ -86,7 +111,7 @@ function restart() {
         variant="ghost"
         class="text-white/80"
         aria-label="Quitter"
-        @click="exit"
+        @click="requestExit"
       />
       <p class="text-xs font-medium uppercase tracking-widest opacity-70">
         {{ current?.blockTitle }}
@@ -183,7 +208,7 @@ function restart() {
       <UIcon name="i-lucide-party-popper" class="size-16 text-primary" />
       <div>
         <h2 class="text-3xl font-bold">Séance terminée&nbsp;!</h2>
-        <p class="mt-2 opacity-70">Durée totale : {{ formatDuration(totalSeconds) }}</p>
+        <p class="mt-2 opacity-70">Durée réelle : {{ formatDuration(activeSeconds) }}</p>
       </div>
       <div class="flex w-full max-w-xs flex-col gap-2">
         <UButton
@@ -191,7 +216,7 @@ function restart() {
           size="xl"
           color="primary"
           icon="i-lucide-clipboard-check"
-          :to="`/seance/${date}/feedback`"
+          :to="`/seance/${date}/feedback?duree=${Math.round(activeSeconds)}`"
         >
           Noter la séance
         </UButton>
@@ -243,6 +268,42 @@ function restart() {
         <ExerciseGuidePanel :exercise="currentExercise" :next="nextExercise" />
       </template>
     </USlideover>
+
+    <!-- Reprise d'une séance interrompue — pas d'échappatoire : il faut choisir. -->
+    <UModal
+      :open="resumeAt !== null"
+      :dismissible="false"
+      :close="false"
+      title="Reprendre ta séance ?"
+      :description="`Tu t'étais arrêté sur « ${resumeAt?.label} », après ${resumeAt?.done} d'effort.`"
+    >
+      <template #footer>
+        <div class="flex w-full flex-col gap-2">
+          <UButton block color="primary" icon="i-lucide-play" @click="restoreSnapshot">
+            Reprendre où j'en étais
+          </UButton>
+          <UButton block color="neutral" variant="soft" @click="discardSnapshot">
+            Recommencer depuis le début
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <!-- Sortie en cours de séance. -->
+    <UModal
+      v-model:open="confirmExitOpen"
+      title="Quitter la séance ?"
+      description="Ta progression est gardée : tu pourras reprendre où tu en es en revenant."
+    >
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" @click="confirmExitOpen = false">
+            Continuer
+          </UButton>
+          <UButton color="primary" icon="i-lucide-log-out" @click="exit">Quitter</UButton>
+        </div>
+      </template>
+    </UModal>
 
     <!-- La route timer n'a pas de layout : on monte le drawer du glossaire ici. -->
     <GlossaryDrawer />

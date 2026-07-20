@@ -184,6 +184,29 @@ export const dismissedDates = sqliteTable('dismissed_dates', {
     .default(sql`(unixepoch())`),
 })
 
+/**
+ * Journal des appels au modèle (append-only) : un enregistrement par appel Anthropic.
+ * Survit à la régénération d'une séance et couvre tous les types d'appel (séance,
+ * exercice, ajustement). Sert la vue « conso » (agrégats par mois / modèle / type).
+ */
+export const aiUsage = sqliteTable('ai_usage', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  /** Date de la séance concernée (YYYY-MM-DD) ou null pour un appel hors séance. */
+  sessionDate: text('session_date'),
+  /** Type d'appel : seance | exercice | ajustement. */
+  kind: text('kind').notNull(),
+  model: text('model').notNull(),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  /** Tokens écrits dans le cache (facturés ~1,25×). */
+  cacheCreationTokens: integer('cache_creation_tokens').notNull().default(0),
+  /** Tokens servis depuis le cache (facturés ~0,1×). */
+  cacheReadTokens: integer('cache_read_tokens').notNull().default(0),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+})
+
 export type Settings = typeof settings.$inferSelect
 export type NewSettings = typeof settings.$inferInsert
 export type Profile = typeof profile.$inferSelect
@@ -198,3 +221,5 @@ export type Weight = typeof weights.$inferSelect
 export type NewWeight = typeof weights.$inferInsert
 export type SessionPlan = typeof sessionPlans.$inferSelect
 export type NewSessionPlan = typeof sessionPlans.$inferInsert
+export type AiUsage = typeof aiUsage.$inferSelect
+export type NewAiUsage = typeof aiUsage.$inferInsert

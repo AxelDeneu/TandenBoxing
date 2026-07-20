@@ -24,13 +24,18 @@ const MONTHS_FR = [
 ]
 
 /** Date du jour (YYYY-MM-DD) dans le fuseau donné. */
-export function todayIso(timezone: string): string {
+/** Date « YYYY-MM-DD » d'un instant donné, exprimée dans le fuseau fourni. */
+export function isoDateInTz(date: Date, timezone: string): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(new Date())
+  }).format(date)
+}
+
+export function todayIso(timezone: string): string {
+  return isoDateInTz(new Date(), timezone)
 }
 
 /** Heure actuelle « HH:mm » dans le fuseau donné. */

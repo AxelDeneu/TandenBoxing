@@ -11,11 +11,22 @@ const { data, refresh } = await useFetch<TodayResponse>('/api/sessions/today', {
 const toast = useToast()
 
 const showRegen = ref(false)
+const showAdjust = ref(false)
 const showReschedule = ref(false)
 const showDelete = ref(false)
 const regenLoading = ref(false)
+const adjustLoading = ref(false)
 const deleteLoading = ref(false)
 const busyKey = ref<string | null>(null)
+
+const adjustInstruction = ref('')
+const ADJUST_SUGGESTIONS = [
+  'Plus court aujourd’hui',
+  'Plus intense',
+  'Plus facile, je récupère',
+  'Sans sauts (voisins du dessous)',
+  'Insiste sur la technique',
+]
 
 const session = computed(() => data.value?.session ?? null)
 const totalSeconds = computed(() =>
@@ -64,6 +75,31 @@ async function regenerate() {
     notifyError(e)
   } finally {
     regenLoading.value = false
+  }
+}
+
+async function adjust() {
+  const instruction = adjustInstruction.value.trim()
+  if (!session.value || !instruction) return
+  adjustLoading.value = true
+  try {
+    await $fetch(`/api/sessions/${session.value.date}/adjust`, {
+      method: 'POST',
+      body: { instruction },
+    })
+    showAdjust.value = false
+    adjustInstruction.value = ''
+    await refresh()
+    toast.add({
+      title: 'Ajustement en cours…',
+      description: 'Ta séance se met à jour dans un instant.',
+      icon: 'i-lucide-wand-sparkles',
+      color: 'info',
+    })
+  } catch (e) {
+    notifyError(e)
+  } finally {
+    adjustLoading.value = false
   }
 }
 
@@ -129,6 +165,11 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
       <UDropdownMenu
         v-if="session"
         :items="[
+          {
+            label: 'Ajuster la séance',
+            icon: 'i-lucide-wand-sparkles',
+            onSelect: () => (showAdjust = true),
+          },
           {
             label: 'Régénérer la séance',
             icon: 'i-lucide-refresh-cw',
@@ -366,6 +407,49 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
             @click="regenerate"
           >
             Régénérer
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal
+      v-model:open="showAdjust"
+      title="Ajuster la séance"
+      description="Dis à ton coach ce que tu veux changer : il ajuste la séance en gardant sa catégorie et son focus."
+    >
+      <template #body>
+        <div class="space-y-3">
+          <UTextarea
+            v-model="adjustInstruction"
+            :rows="3"
+            autofocus
+            placeholder="ex : plus court aujourd'hui, j'ai 30 min"
+            class="w-full"
+          />
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="s in ADJUST_SUGGESTIONS"
+              :key="s"
+              type="button"
+              class="rounded-full border border-default px-3 py-1 text-xs text-muted transition-colors hover:border-primary/40 hover:text-default"
+              @click="adjustInstruction = s"
+            >
+              {{ s }}
+            </button>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" @click="showAdjust = false">Annuler</UButton>
+          <UButton
+            color="primary"
+            icon="i-lucide-wand-sparkles"
+            :loading="adjustLoading"
+            :disabled="!adjustInstruction.trim()"
+            @click="adjust"
+          >
+            Ajuster
           </UButton>
         </div>
       </template>
