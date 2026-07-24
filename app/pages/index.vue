@@ -14,6 +14,7 @@ const showRegen = ref(false)
 const showAdjust = ref(false)
 const showReschedule = ref(false)
 const showDelete = ref(false)
+const showCustom = ref(false)
 const regenLoading = ref(false)
 const adjustLoading = ref(false)
 const deleteLoading = ref(false)
@@ -129,6 +130,12 @@ async function deleteSession() {
   } finally {
     deleteLoading.value = false
   }
+}
+
+/** Séance sur mesure lancée : la génération tourne en fond, le polling l'affichera. */
+async function customDone() {
+  showCustom.value = false
+  await refresh()
 }
 
 async function swap(blockIndex: number, exerciseIndex: number, action: 'replace' | 'remove') {
@@ -386,11 +393,37 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
         </div>
       </UCard>
 
-      <!-- Point d'entrée vers la planification (visible quel que soit l'état du jour). -->
-      <UButton block color="neutral" variant="ghost" icon="i-lucide-calendar-days" to="/planning">
-        Planifier une séance
-      </UButton>
+      <!-- Points d'entrée : séance sur mesure du jour + planification. -->
+      <div class="grid grid-cols-2 gap-2">
+        <UButton
+          block
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-wand-sparkles"
+          :disabled="!data.hasApiKey"
+          @click="showCustom = true"
+        >
+          Séance sur mesure
+        </UButton>
+        <UButton block color="neutral" variant="ghost" icon="i-lucide-calendar-days" to="/planning">
+          Planifier
+        </UButton>
+      </div>
     </template>
+
+    <USlideover
+      v-model:open="showCustom"
+      title="Séance sur mesure"
+      :description="
+        session
+          ? 'Compose ta séance du jour — elle remplacera la séance actuelle.'
+          : 'Décris ce que tu veux : ton coach IA compose une séance unique pour aujourd\'hui.'
+      "
+    >
+      <template #body>
+        <PlanSessionForm v-if="data" :date="data.date" generate-only @done="customDone" />
+      </template>
+    </USlideover>
 
     <UModal
       v-model:open="showRegen"

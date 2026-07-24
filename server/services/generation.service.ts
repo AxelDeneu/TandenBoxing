@@ -75,8 +75,9 @@ ${FOCUS_GUIDE}
 Le focus irrigue le bloc technique et, quand c'est pertinent, les autres blocs. La catégorie dit COMMENT on travaille, le focus dit SUR QUOI.
 
 DEMANDE EXPLICITE DE L'UTILISATEUR
-- Si le contexte contient "demande.categorie", tu DOIS renvoyer EXACTEMENT cette valeur dans "category".
-- Si "demande.focus" est renseigné (non null), tu DOIS renvoyer EXACTEMENT cette valeur dans "focus" ; s'il est null, choisis toi-même le focus le plus pertinent.
+- Si le contexte contient "demande.categorie" (non null), tu DOIS renvoyer EXACTEMENT cette valeur dans "category" ; si elle est null, choisis toi-même la catégorie la plus pertinente.
+- Si "demande.focusLibre" est renseigné (non null), c'est une séance SUR MESURE : ce thème libre (ex : « pectoraux », « biceps », « explosivité ») décrit ce que l'utilisateur veut travailler. Construis la séance autour de ce thème en restant dans le cadre boxe et le matériel autorisé (sac de frappe + poids du corps — ex : pectoraux → pompes et variantes + frappes engagées au sac), et renvoie dans "focus" la valeur de l'énumération la plus proche du thème. "focusLibre" prime sur "focus".
+- Sinon, si "demande.focus" est renseigné (non null), tu DOIS renvoyer EXACTEMENT cette valeur dans "focus" ; s'il est null, choisis toi-même le focus le plus pertinent.
 - Tiens compte de "demande.note" (envie ou contrainte du jour) si elle est présente.
 - Sans "demande", choisis toi-même la catégorie ET le focus les plus pertinents au vu de la mémoire et de l'historique.
 - Renvoie TOUJOURS "category" ET "focus".
@@ -173,8 +174,11 @@ interface MemorySummary {
 
 /** Intention planifiée par l'utilisateur pour cette date. */
 interface GenerationRequest {
-  categorie: string
+  /** Null = catégorie laissée au choix de l'IA. */
+  categorie: string | null
   focus: string | null
+  /** Thème libre d'une séance sur mesure (ex : « pectoraux ») ; prime sur `focus`. */
+  focusLibre: string | null
   note: string | null
 }
 
@@ -254,6 +258,10 @@ export function buildGenerationContext(date: string): {
   const settingsRow = getSettings()
   const profileRow = getProfile()
 
+  // Séance planifiée à l'avance : sa durée sur mesure prime sur la durée cible des réglages.
+  const plan = getPlan(date)
+  const dureeCibleMin = plan?.durationMin ?? settingsRow.targetDurationMin
+
   const allCompleted = listCompletedSessions()
   const past = allCompleted.filter((s) => s.date !== date)
   const recent = past.slice(0, 8)
@@ -313,7 +321,7 @@ export function buildGenerationContext(date: string): {
   const context: GenerationContext = {
     date,
     jour: weekdayLabel(date),
-    dureeCibleMin: settingsRow.targetDurationMin,
+    dureeCibleMin,
     profil: {
       niveau: profileRow.level,
       objectif: profileRow.goal,
@@ -327,7 +335,7 @@ export function buildGenerationContext(date: string): {
     },
     reglages: {
       joursEntrainement: settingsRow.trainingDays,
-      dureeCibleMin: settingsRow.targetDurationMin,
+      dureeCibleMin,
     },
     tendance: {
       seances7j,
@@ -355,10 +363,14 @@ export function buildGenerationContext(date: string): {
     }))
   }
 
-  // Séance planifiée à l'avance : le modèle doit respecter la catégorie/le focus demandés.
-  const plan = getPlan(date)
+  // Séance planifiée à l'avance : le modèle doit respecter l'intention demandée.
   if (plan) {
-    context.demande = { categorie: plan.category, focus: plan.focus, note: plan.note }
+    context.demande = {
+      categorie: plan.category,
+      focus: plan.focus,
+      focusLibre: plan.customFocus,
+      note: plan.note,
+    }
   }
 
   return { settingsRow, context }
@@ -385,6 +397,7 @@ export async function generateSessionForDate(
     context.demande = {
       categorie: existing.category,
       focus: existing.focus,
+      focusLibre: context.demande?.focusLibre ?? null,
       note: context.demande?.note ?? null,
     }
   }
@@ -397,11 +410,16 @@ export async function generateSessionForDate(
     ...(demande
       ? [
           ``,
-          `J'ai planifié cette séance : catégorie « ${demande.categorie} »` +
-            (demande.focus
-              ? `, focus « ${demande.focus} ». Respecte EXACTEMENT ces deux valeurs.`
-              : `, focus libre (choisis le plus pertinent). Respecte EXACTEMENT la catégorie.`),
-          ...(demande.note ? [`Ma note pour cette séance : ${demande.note}`] : []),
+          `J'ai planifié cette séance :`,
+          demande.categorie
+            ? `- Catégorie : « ${demande.categorie} » (respecte EXACTEMENT cette valeur).`
+            : `- Catégorie : à ton choix (la plus pertinente).`,
+          demande.focusLibre
+            ? `- Thème sur mesure : « ${demande.focusLibre} » — construis la séance autour de ce thème (et renvoie dans "focus" la valeur de l'énumération la plus proche).`
+            : demande.focus
+              ? `- Focus : « ${demande.focus} » (respecte EXACTEMENT cette valeur).`
+              : `- Focus : à ton choix (le plus pertinent).`,
+          ...(demande.note ? [`- Ma note pour cette séance : ${demande.note}`] : []),
         ]
       : []),
     ...(adjustment && existing
@@ -475,7 +493,8 @@ export async function generateSessionForDate(
     focus: session.focus,
     summary: session.summary,
     coachNote: session.coachNote,
-    targetDurationMin: settingsRow.targetDurationMin,
+    // Durée cible effective : celle du plan sur mesure si présent, sinon celle des réglages.
+    targetDurationMin: context.dureeCibleMin,
     // Durée réellement induite par les intervalles : source de vérité (le modèle s'en écarte souvent).
     estimatedDurationMin: Math.max(1, Math.round(estimateSessionSeconds(session) / 60)),
     structure: session,

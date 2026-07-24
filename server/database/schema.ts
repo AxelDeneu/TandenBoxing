@@ -151,10 +151,17 @@ export const exerciseFeedback = sqliteTable('exercise_feedback', {
 export const sessionPlans = sqliteTable('session_plans', {
   /** Date planifiée au format YYYY-MM-DD (fuseau utilisateur). */
   date: text('date').primaryKey(),
-  /** Catégorie voulue : apprentissage | renforcement | enchainement | cardio | recuperation. */
-  category: text('category').notNull(),
+  /**
+   * Catégorie voulue : apprentissage | renforcement | enchainement | cardio | recuperation.
+   * Null = laissée au choix de l'IA (séance sur mesure).
+   */
+  category: text('category'),
   /** Focus (thème) voulu ; null = laissé au choix de l'IA. */
   focus: text('focus'),
+  /** Thème libre d'une séance sur mesure (ex : « pectoraux », « biceps ») ; prime sur `focus`. */
+  customFocus: text('custom_focus'),
+  /** Durée voulue pour CETTE séance (minutes) ; null = durée cible des réglages. */
+  durationMin: integer('duration_min'),
   /** Note libre de l'utilisateur (intention, contrainte du jour…). */
   note: text('note'),
   ...timestamps,

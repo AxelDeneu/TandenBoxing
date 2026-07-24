@@ -89,8 +89,12 @@ const cells = computed(() => {
       number: Number(date.slice(8)),
       inMonth: date.slice(0, 7) === prefix,
       isToday: date === props.today,
-      // Séance : son titre ; simple intention : le libellé de la catégorie visée.
-      title: day?.session?.title ?? (day?.plan ? categoryLabel(day.plan.category) : null),
+      // Séance : son titre ; intention : le thème libre, sinon la catégorie visée.
+      title:
+        day?.session?.title ??
+        (day?.plan
+          ? (day.plan.customFocus ?? categoryLabel(day.plan.category) ?? 'Sur mesure')
+          : null),
     }
   })
 })

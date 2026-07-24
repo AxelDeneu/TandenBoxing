@@ -83,6 +83,8 @@ async function generateFromPlan() {
         date: plan.value.date,
         category: plan.value.category,
         focus: plan.value.focus,
+        customFocus: plan.value.customFocus,
+        durationMin: plan.value.durationMin,
         note: plan.value.note,
         generateNow: true,
       },
@@ -248,12 +250,27 @@ async function deletePlan() {
               >
                 {{ categoryLabel(plan.category) }}
               </UBadge>
+              <UBadge v-else color="neutral" variant="soft" icon="i-lucide-sparkles">
+                Catégorie au choix de l'IA
+              </UBadge>
               <UBadge
+                v-if="plan.customFocus"
+                color="primary"
+                variant="soft"
+                icon="i-lucide-pencil-line"
+              >
+                {{ plan.customFocus }}
+              </UBadge>
+              <UBadge
+                v-else
                 color="primary"
                 variant="soft"
                 :icon="plan.focus ? FOCUS_META[plan.focus]?.icon : 'i-lucide-sparkles'"
               >
                 {{ plan.focus ? focusLabel(plan.focus) : "Focus au choix de l'IA" }}
+              </UBadge>
+              <UBadge v-if="plan.durationMin" color="neutral" variant="soft" icon="i-lucide-clock">
+                {{ plan.durationMin }} min
               </UBadge>
             </div>
 

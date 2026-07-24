@@ -51,7 +51,14 @@ export default defineEventHandler((event) => {
           }
         : null,
       plan: plan
-        ? { date: plan.date, category: plan.category, focus: plan.focus, note: plan.note }
+        ? {
+            date: plan.date,
+            category: plan.category,
+            focus: plan.focus,
+            customFocus: plan.customFocus,
+            durationMin: plan.durationMin,
+            note: plan.note,
+          }
         : null,
     })
   }

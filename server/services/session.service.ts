@@ -29,16 +29,21 @@ export function startSession(date: string): Session {
 }
 
 export interface PlanPayload {
-  category: SessionCategory
+  /** Null = catégorie laissée au choix de l'IA. */
+  category?: SessionCategory | null
   focus?: WorkoutFocus | null
+  /** Thème libre d'une séance sur mesure (ex : « pectoraux ») ; prime sur `focus`. */
+  customFocus?: string | null
+  /** Durée voulue pour cette séance (minutes) ; null = durée cible des réglages. */
+  durationMin?: number | null
   note?: string | null
   /** Génère la séance complète immédiatement au lieu d'attendre le jour J. */
   generateNow?: boolean
 }
 
 /**
- * Planifie l'intention d'une date (catégorie + focus optionnel). La séance complète est
- * générée le jour J par le cron, ou tout de suite si `generateNow`.
+ * Planifie l'intention d'une date (catégorie, focus, durée… tous optionnels). La séance
+ * complète est générée le jour J par le cron, ou tout de suite si `generateNow`.
  */
 export function planSession(
   date: string,
@@ -46,8 +51,10 @@ export function planSession(
 ): { plan: SessionPlan; generating: boolean } {
   const plan = upsertPlan({
     date,
-    category: payload.category,
+    category: payload.category ?? null,
     focus: payload.focus ?? null,
+    customFocus: payload.customFocus ?? null,
+    durationMin: payload.durationMin ?? null,
     note: payload.note ?? null,
   })
   // Planification explicite : la date redevient éligible à la génération automatique.
@@ -98,6 +105,8 @@ export function rescheduleSession(
         date: newDate,
         category: plan.category,
         focus: plan.focus,
+        customFocus: plan.customFocus,
+        durationMin: plan.durationMin,
         note: plan.note,
       })
     }

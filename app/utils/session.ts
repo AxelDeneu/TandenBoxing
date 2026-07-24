@@ -55,8 +55,13 @@ export interface TodayResponse {
 /** Intention de planification (séance pas forcément encore générée). */
 export interface ApiSessionPlan {
   date: string
-  category: string
+  /** Null = catégorie laissée au choix de l'IA. */
+  category: string | null
   focus: string | null
+  /** Thème libre d'une séance sur mesure (ex : « pectoraux ») ; prime sur `focus`. */
+  customFocus: string | null
+  /** Durée voulue pour cette séance (minutes) ; null = durée cible des réglages. */
+  durationMin: number | null
   note: string | null
 }
 
