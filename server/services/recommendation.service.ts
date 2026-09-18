@@ -7,6 +7,7 @@ import {
   type RecoHistoryEntry,
 } from '../../shared/recommendations'
 import { sessionCategory, workoutFocus } from '../../shared/session-schema'
+import type { SkillProgressionSnapshot } from '../../shared/skill-mastery'
 
 /**
  * Recommandations « quoi travailler ensuite » : l'IA personnalise les justifications,
@@ -47,12 +48,10 @@ ${CATEGORY_GUIDE}
 FOCUS (le thème technique) : fondations, jeu_de_jambes, defense, crochets, uppercuts, combinaisons, puissance, corps, cardio, gainage.
 
 RÈGLES
-- Varie : ne propose jamais deux fois le même focus.
-- Privilégie les focus jamais travaillés, puis les plus négligés.
-- Fais progresser : focus jamais vu → "apprentissage" ; vu 1 ou 2 fois → "renforcement" ; bien acquis → "enchainement".
-- Si les séances récentes ont été éprouvantes (difficulté haute, énergie basse) ou très rapprochées, place une "recuperation" en premier.
-- "reason" : UNE phrase courte (15 mots max), personnalisée, appuyée sur un fait concret de la mémoire (ancienneté, nombre de fois, ressenti).
-- Classe les propositions de la plus pertinente à la moins pertinente.
+- Les couples catégorie + focus reçus sont calculés depuis un curriculum et des états de maîtrise. Conserve EXACTEMENT leurs valeurs et leur ordre ; reformule seulement leurs raisons.
+- Un nombre de séances ne prouve jamais à lui seul qu'une compétence est acquise.
+- "reason" : UNE phrase courte, personnalisée, appuyée sur un état ou un fait concret fourni.
+- Ne présente jamais comme acquise une compétence en consolidation ou bloquée par un prérequis.
 
 Réponds EXCLUSIVEMENT en appelant l'outil "recommander_focus".`
 
@@ -135,6 +134,7 @@ async function askModel(
   date: string,
   history: RecoHistoryEntry[],
   baseline: FocusRecommendation[],
+  progression: SkillProgressionSnapshot,
 ): Promise<FocusRecommendation[]> {
   const settingsRow = getSettings()
 
@@ -144,10 +144,15 @@ async function askModel(
     `Ma mémoire d'entraînement :`,
     formatMemory(date, history),
     ``,
-    `Pistes calculées automatiquement (à valider, affiner ou remplacer selon ton analyse) :`,
+    `État calculé des compétences (source de vérité) :`,
+    '```json',
+    JSON.stringify(progression, null, 2),
+    '```',
+    ``,
+    `Pistes calculées automatiquement (conserve exactement les couples et l'ordre) :`,
     ...baseline.map((r) => `- ${r.category} / ${r.focus} : ${r.reason}`),
     ``,
-    `Propose 3 à 4 prochaines séances et appelle l'outil "recommander_focus".`,
+    `Reformule seulement leurs raisons et appelle l'outil "recommander_focus".`,
   ].join('\n')
 
   const client = useAnthropic()
@@ -169,8 +174,19 @@ async function askModel(
   if (!toolUse) throw new Error("Le modèle n'a pas renvoyé de recommandations.")
 
   const parsed = recoSchema.parse(toolUse.input)
-  // Le score n'est qu'un rang : le modèle a déjà classé ses propositions.
-  return parsed.recommandations.map((r, i) => ({ ...r, score: 100 - i }))
+  // La personnalisation ne peut ni contourner un prérequis, ni remplacer le planner.
+  const modelReasons = new Map(
+    parsed.recommandations.map((recommendation) => [
+      `${recommendation.category}:${recommendation.focus}`,
+      recommendation.reason,
+    ]),
+  )
+  return baseline.map((recommendation) => ({
+    ...recommendation,
+    reason:
+      modelReasons.get(`${recommendation.category}:${recommendation.focus}`) ??
+      recommendation.reason,
+  }))
 }
 
 /**
@@ -182,13 +198,14 @@ export async function getRecommendations(date: string): Promise<FocusRecommendat
   if (cached) return cached
 
   const history = buildRecoHistory()
-  const baseline = recommendFocuses({ today: date, history })
+  const progression = getSkillProgression(date)
+  const baseline = recommendFocuses({ today: date, history, skillProgression: progression })
 
   const { anthropicApiKey } = useRuntimeConfig()
   if (!anthropicApiKey) return baseline
 
   try {
-    const recos = await askModel(date, history, baseline)
+    const recos = await askModel(date, history, baseline, progression)
     recoCache.set(date, recos)
     return recos
   } catch (error) {

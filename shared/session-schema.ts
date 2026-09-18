@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { BEGINNER_CURRICULUM, SKILL_IDS } from './curriculum'
 
 /**
  * Contrat de sortie de l'IA (et de rendu côté client).
@@ -31,6 +32,9 @@ export const exerciseCategory = z.enum([
   'recuperation',
 ])
 
+/** Identifiant stable du curriculum v1, persisté avec chaque exercice généré. */
+export const skillIdSchema = z.enum(SKILL_IDS)
+
 export const exerciseSchema = z.object({
   /** Nom court de l'exercice (ex: « Jab-Cross au sac », « Montées de genoux »). */
   name: z.string().min(1),
@@ -42,6 +46,8 @@ export const exerciseSchema = z.object({
   tips: z.array(z.string()).default([]),
   /** Erreurs fréquentes à éviter. */
   commonMistakes: z.array(z.string()).default([]),
+  /** Compétences techniques réellement travaillées ; vide pour le cardio/mobilité générique. */
+  skillIds: z.array(skillIdSchema).max(6).default([]),
   /** Combo en notation numérotée boxe anglaise, ex: "1-2", "1-1-2", "1-2-3-2". Null si N/A. */
   combo: z.string().nullable().default(null),
   /** Décodage du combo (ex: "1 = jab, 2 = cross direct arrière"). Null si pas de combo. */
@@ -102,6 +108,8 @@ export const workoutFocus = z.enum([
 export const workoutSessionSchema = z.object({
   /** Titre accrocheur de la séance du jour. */
   title: z.string().min(1),
+  /** Version du curriculum utilisée pour produire les tags de compétence. */
+  curriculumVersion: z.literal(BEGINNER_CURRICULUM.version).default(BEGINNER_CURRICULUM.version),
   /** Catégorie (type) de la séance : pilote la structure. */
   category: sessionCategory,
   /** Dominante technique (thème) de la séance. */
@@ -120,6 +128,7 @@ export const workoutSessionSchema = z.object({
 
 export type Interval = z.infer<typeof intervalSchema>
 export type Exercise = z.infer<typeof exerciseSchema>
+export type ExerciseSkillId = z.infer<typeof skillIdSchema>
 export type ExerciseCategory = z.infer<typeof exerciseCategory>
 export type WorkoutBlock = z.infer<typeof blockSchema>
 export type BlockType = z.infer<typeof blockType>
