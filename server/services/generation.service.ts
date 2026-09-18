@@ -1,5 +1,6 @@
 import type AnthropicSDK from '@anthropic-ai/sdk'
 import { z } from 'zod'
+import { GENERATOR_VERSIONS, type GeneratorVersions } from '../../shared/generator-version'
 import {
   estimateSessionSeconds,
   exerciseSchema,
@@ -192,6 +193,8 @@ interface SkippedEntry {
 }
 
 export interface GenerationContext {
+  /** Versions persistées avec la séance pour attribuer toute évolution ou régression. */
+  generatorVersions: GeneratorVersions
   date: string
   jour: string
   dureeCibleMin: number
@@ -319,6 +322,7 @@ export function buildGenerationContext(date: string): {
   }
 
   const context: GenerationContext = {
+    generatorVersions: GENERATOR_VERSIONS,
     date,
     jour: weekdayLabel(date),
     dureeCibleMin,
