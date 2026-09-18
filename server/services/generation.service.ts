@@ -1,6 +1,7 @@
 import type AnthropicSDK from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { GENERATOR_VERSIONS, type GeneratorVersions } from '../../shared/generator-version'
+import { buildSessionPrompt } from '../../shared/generation-prompt'
 import {
   GeneratedSessionValidationError,
   resolveGeneratedSession,
@@ -17,7 +18,9 @@ import {
   type Exercise,
   type WorkoutSession,
 } from '../../shared/session-schema'
+import type { WorkoutPrescription } from '../../shared/workout-prescription'
 import type { NewSession, Session } from '../database/schema'
+import { buildWorkoutPrescription } from './workout-prescription.service'
 
 /** Outil de sortie structurée imposé au modèle pour une séance complète. */
 const SESSION_TOOL = {
@@ -83,19 +86,18 @@ Le champ "focus" indique la dominante technique travaillée :
 ${FOCUS_GUIDE}
 Le focus irrigue le bloc technique et, quand c'est pertinent, les autres blocs. La catégorie dit COMMENT on travaille, le focus dit SUR QUOI.
 
-DEMANDE EXPLICITE DE L'UTILISATEUR
-- Si le contexte contient "demande.categorie" (non null), tu DOIS renvoyer EXACTEMENT cette valeur dans "category" ; si elle est null, choisis toi-même la catégorie la plus pertinente.
-- Si "demande.focusLibre" est renseigné (non null), c'est une séance SUR MESURE : ce thème libre (ex : « pectoraux », « biceps », « explosivité ») décrit ce que l'utilisateur veut travailler. Construis la séance autour de ce thème en restant dans le cadre boxe et le matériel autorisé (sac de frappe + poids du corps — ex : pectoraux → pompes et variantes + frappes engagées au sac), et renvoie dans "focus" la valeur de l'énumération la plus proche du thème. "focusLibre" prime sur "focus".
-- Sinon, si "demande.focus" est renseigné (non null), tu DOIS renvoyer EXACTEMENT cette valeur dans "focus" ; s'il est null, choisis toi-même le focus le plus pertinent.
-- Tiens compte de "demande.note" (envie ou contrainte du jour) si elle est présente.
-- Sans "demande", choisis toi-même la catégorie ET le focus les plus pertinents au vu de la mémoire et de l'historique.
+PRESCRIPTION DÉTERMINISTE
+- Le contexte contient une "prescription" déjà calculée côté application. Elle décide de la catégorie, du focus, de l'intensité, de la durée, des budgets par type de bloc et du nombre maximal de techniques nouvelles.
+- Tu ne reprends AUCUNE de ces décisions : renvoie EXACTEMENT "prescription.category" et "prescription.focus", puis choisis uniquement les exercices et leur rédaction.
+- Respecte "prescription.targetSeconds" et chacun des "prescription.blockBudgets". Un budget nul interdit le type de bloc correspondant.
+- "demande.focusLibre" et "demande.note" peuvent préciser le contenu des exercices, mais ne changent jamais les champs déjà décidés par la prescription.
 - Renvoie TOUJOURS "category" ET "focus".
 
 MÉMOIRE & PROGRESSION
 Le contexte fournit "memoire" : par focus et par catégorie déjà pratiqués, la dernière date, le nombre de jours écoulés et le nombre de fois travaillés ; plus "combosRecents", les combos vus dans les séances récentes.
 - Construis une VRAIE progression : reprends et complexifie ce qui est déjà acquis plutôt que de repartir de zéro.
 - Évite de resservir tels quels les combos de "combosRecents" : varie les enchaînements.
-- À défaut de demande explicite, privilégie les focus négligés depuis longtemps et les catégories peu vues.
+- Utilise la mémoire pour choisir le contenu et faire progresser les exercices à l'intérieur de la prescription.
 - Le contexte peut contenir "seancesSautees" (séances récemment non faites, avec la raison éventuelle) : tiens-en compte — reprise en douceur après une coupure, et allègement si la raison évoque une fatigue ou une blessure.
 
 NOTATION DES COMBOS (boxe anglaise)
@@ -103,7 +105,7 @@ NOTATION DES COMBOS (boxe anglaise)
 Pour chaque exercice TECHNIQUE au sac, fournis le combo en notation chiffrée (champ "combo", ex : "1-2", "1-1-2", "1-2-3-2") ET son décodage en clair (champ "comboExplanation"). Pour les exercices sans combo (échauffement, gainage, étirements), mets "combo" et "comboExplanation" à null.
 
 RÈGLES DE CONCEPTION
-- Respecte STRICTEMENT la durée cible fournie. La somme, sur tous les exercices, de rounds × (work + rest) + restAfterSec doit approcher la durée cible en secondes, sans la dépasser.
+- Respecte STRICTEMENT la durée et les budgets de blocs de la prescription. La somme, sur tous les exercices, de rounds × work + (rounds - 1) × rest + restAfterSec doit approcher chaque budget sans le dépasser.
 - Intervalles réalistes pour un débutant : privilégie des rounds courts (ex : 20-40 s d'effort) avec repos suffisant. Le format peut s'inspirer du Tabata ou de mini-rounds. Adapte selon le bloc et la catégorie (technique = plus de repos, cardio = plus dense, récupération = très léger).
 - Progression : ajuste le volume, l'intensité et la complexité des combos selon l'historique et les derniers ressentis. Si les dernières séances ont été jugées trop dures (difficulté élevée, énergie basse, courbatures marquées), allège. Si trop faciles, intensifie et enrichis les combos.
 - Reprise en douceur après des séances ratées ou une coupure : ne saute pas d'étapes, réduis un peu l'intensité.
@@ -210,6 +212,8 @@ export interface GenerationContext {
   reglages: Record<string, unknown>
   tendance: Record<string, unknown>
   poids: Record<string, unknown> | null
+  /** Décisions déterministes que la génération et la future politique de validation partagent. */
+  prescription: WorkoutPrescription
   /** Présent uniquement si la date a été planifiée : le modèle doit la respecter. */
   demande?: GenerationRequest
   memoire: MemorySummary
@@ -283,9 +287,10 @@ export function buildGenerationContext(date: string): {
   const settingsRow = getSettings()
   const profileRow = getProfile()
 
-  // Séance planifiée à l'avance : sa durée sur mesure prime sur la durée cible des réglages.
+  // La prescription partage la même source pour les générations directes et différées.
   const plan = getPlan(date)
-  const dureeCibleMin = plan?.durationMin ?? settingsRow.targetDurationMin
+  const prescription = buildWorkoutPrescription(date)
+  const dureeCibleMin = prescription.targetSeconds / 60
 
   const allCompleted = listCompletedSessions()
   const past = allCompleted.filter((s) => s.date !== date)
@@ -370,6 +375,7 @@ export function buildGenerationContext(date: string): {
       joursDepuisDerniereSeance: derniere ? daysBetween(derniere, date) : null,
     },
     poids,
+    prescription,
     memoire: buildMemory(date, past),
     historique,
   }
@@ -426,47 +432,19 @@ export async function generateSessionForDate(
       focusLibre: context.demande?.focusLibre ?? null,
       note: context.demande?.note ?? null,
     }
+    context.prescription = buildWorkoutPrescription(date, {
+      category: existing.category,
+      focus: existing.focus,
+    })
   }
 
   const { demande } = context
-  const userPrompt = [
-    `Nous sommes le ${formatDateFr(date)}. Prépare ma séance de boxe du jour.`,
-    ``,
-    `Durée cible : ${context.dureeCibleMin} minutes (à ne pas dépasser).`,
-    ...(demande
-      ? [
-          ``,
-          `J'ai planifié cette séance :`,
-          demande.categorie
-            ? `- Catégorie : « ${demande.categorie} » (respecte EXACTEMENT cette valeur).`
-            : `- Catégorie : à ton choix (la plus pertinente).`,
-          demande.focusLibre
-            ? `- Thème sur mesure : « ${demande.focusLibre} » — construis la séance autour de ce thème (et renvoie dans "focus" la valeur de l'énumération la plus proche).`
-            : demande.focus
-              ? `- Focus : « ${demande.focus} » (respecte EXACTEMENT cette valeur).`
-              : `- Focus : à ton choix (le plus pertinent).`,
-          ...(demande.note ? [`- Ma note pour cette séance : ${demande.note}`] : []),
-        ]
-      : []),
-    ...(adjustment && existing
-      ? [
-          ``,
-          `AJUSTEMENT DEMANDÉ. Voici ma séance actuelle (JSON) :`,
-          '```json',
-          JSON.stringify(existing.structure, null, 2),
-          '```',
-          `Repars de CETTE séance et applique ma consigne : « ${adjustment} ».`,
-          `Garde la même catégorie et le même focus, ainsi que tout ce que la consigne ne remet pas en cause ; ne change QUE ce qui est nécessaire pour la respecter.`,
-        ]
-      : []),
-    ``,
-    `Voici mon profil, mes réglages, ma mémoire d'entraînement et mon historique récent (au format JSON) :`,
-    '```json',
-    JSON.stringify(context, null, 2),
-    '```',
-    ``,
-    `Conçois la séance en adaptant la structure à la catégorie, en respectant les règles, et appelle l'outil "proposer_seance".`,
-  ].join('\n')
+  const userPrompt = buildSessionPrompt({
+    dateLabel: formatDateFr(date),
+    context,
+    adjustment,
+    existingStructure: existing?.structure,
+  })
 
   const client = useAnthropic()
   let response

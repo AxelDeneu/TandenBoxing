@@ -61,6 +61,24 @@ shared/              # Schéma de séance (Zod) partagé client/serveur
 drizzle/             # Migrations SQL générées
 ```
 
+## Prescription des séances
+
+Avant tout appel IA, un planner pur fixe la catégorie, le focus, l'intensité, la durée et le
+budget de chaque type de bloc. Le modèle choisit ensuite uniquement les exercices compatibles.
+Les profils déterministes sont les suivants :
+
+| Catégorie     | Intensité | Échauffement | Technique | Cardio | Renforcement | Retour au calme |
+| ------------- | --------- | ------------ | --------- | ------ | ------------ | --------------- |
+| apprentissage | 2/5       | 15 %         | 55 %      | 10 %   | 5 %          | 15 %            |
+| renforcement  | 3/5       | 15 %         | 35 %      | 15 %   | 20 %         | 15 %            |
+| enchainement  | 4/5       | 12 %         | 50 %      | 23 %   | 5 %          | 10 %            |
+| cardio        | 5/5       | 12 %         | 15 %      | 58 %   | 5 %          | 10 %            |
+| recuperation  | 1/5       | 30 %         | 25 %      | 0 %    | 0 %          | 45 %            |
+
+La somme des budgets en secondes est toujours égale à la durée cible. La fatigue, une reprise
+après interruption ou une contrainte explicite réduisent l'intensité et interdisent les nouvelles
+techniques, sans écraser les choix explicites de catégorie, focus ou durée.
+
 ## Déploiement
 
 Voir [DEPLOY.md](./DEPLOY.md) (Dokploy / Docker).
