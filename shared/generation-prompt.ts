@@ -1,4 +1,5 @@
 import type { WorkoutPrescription } from './workout-prescription'
+import type { WorkoutVarietyConstraints } from './session-variety'
 
 export interface GenerationPromptRequest {
   categorie: string | null
@@ -10,7 +11,7 @@ export interface GenerationPromptRequest {
 /** Sous-ensemble stable du contexte requis pour construire le prompt fournisseur. */
 export interface GenerationPromptContext {
   dureeCibleMin: number
-  prescription: WorkoutPrescription
+  prescription: WorkoutPrescription & { variety?: WorkoutVarietyConstraints }
   demande?: GenerationPromptRequest
 }
 
@@ -45,6 +46,19 @@ export function buildSessionPrompt(input: SessionPromptInput): string {
     `- Budgets de blocs à réaliser :`,
     ...positiveBudgets,
     `- N'introduis pas plus de ${prescription.maxNewTechniques} technique(s) nouvelle(s).`,
+    ...(prescription.variety
+      ? [
+          `- Chevauchement maximal du corps principal avec la séance précédente : ${Math.round(prescription.variety.maxMainOverlap * 100)} %.`,
+          `- Routines d'échauffement préférées : ${prescription.variety.preferredWarmupVariantIds.join(', ')}.`,
+          `- Routines de retour au calme préférées : ${prescription.variety.preferredCooldownVariantIds.join(', ')}.`,
+          ...(prescription.variety.consolidation.intentional &&
+          prescription.variety.consolidation.reason
+            ? [
+                `- Consolidation intentionnelle autorisée : ${prescription.variety.consolidation.reason}`,
+              ]
+            : []),
+        ]
+      : []),
     `- Un type de bloc doté d'un budget de 0 seconde ne doit pas être généré.`,
     ...(demande?.focusLibre
       ? [
