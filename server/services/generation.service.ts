@@ -1,5 +1,7 @@
 import type AnthropicSDK from '@anthropic-ai/sdk'
 import { z } from 'zod'
+import { BEGINNER_CURRICULUM } from '../../shared/curriculum'
+import { tagExerciseWithSkills } from '../../shared/skill-history'
 import {
   estimateSessionSeconds,
   exerciseSchema,
@@ -8,6 +10,7 @@ import {
   type Exercise,
   type WorkoutSession,
 } from '../../shared/session-schema'
+import type { SkillProgressionSnapshot } from '../../shared/skill-mastery'
 import type { NewSession, Session } from '../database/schema'
 
 /** Outil de sortie structurée imposé au modèle pour une séance complète. */
@@ -51,6 +54,18 @@ const FOCUS_GUIDE = [
   '- gainage : ceinture abdominale et renforcement au poids du corps au service de la frappe.',
 ].join('\n')
 
+/** Graphe pédagogique stable injecté dans le préfixe cachable du prompt. */
+const CURRICULUM_GUIDE = BEGINNER_CURRICULUM.skills
+  .map(
+    (skill) =>
+      `- ${skill.id} (${skill.label})${
+        skill.prerequisites.length
+          ? ` — prérequis : ${skill.prerequisites.join(', ')}`
+          : ' — aucun prérequis'
+      }`,
+  )
+  .join('\n')
+
 export const SYSTEM_PROMPT = `Tu es un coach de boxe anglaise expert, spécialisé dans l'entraînement au sac de frappe à domicile pour la remise en forme et la perte de gras. Tu conçois des séances matinales sûres, progressives et motivantes. Tu tutoies l'utilisateur et écris exclusivement en français.
 
 PUBLIC & MATÉRIEL
@@ -73,6 +88,13 @@ FOCUS = THÈME TECHNIQUE
 Le champ "focus" indique la dominante technique travaillée :
 ${FOCUS_GUIDE}
 Le focus irrigue le bloc technique et, quand c'est pertinent, les autres blocs. La catégorie dit COMMENT on travaille, le focus dit SUR QUOI.
+
+CURRICULUM DÉBUTANT — VERSION ${BEGINNER_CURRICULUM.version}
+${CURRICULUM_GUIDE}
+- Pour CHAQUE exercice, renseigne "skillIds" avec uniquement les identifiants ci-dessus réellement travaillés. Utilise [] pour un exercice physique, cardio ou de mobilité sans apprentissage technique ciblé.
+- Le contexte contient "progressionCompetences", calculé à partir des séances terminées et de leurs feedbacks. Utilise ses états, ses nouveautés éligibles et ses prérequis manquants ; ne déduis jamais la maîtrise du seul nombre de séances.
+- Sans demande explicite, n'introduis aucune compétence absente de "eligibleNewSkillIds" et au maximum une nouveauté dans la séance.
+- Une demande explicite peut viser une compétence non acquise ou bloquée : conserve la cible, mais réduis l'intensité, décompose le geste et consolide ses prérequis au lieu de simuler un acquis.
 
 DEMANDE EXPLICITE DE L'UTILISATEUR
 - Si le contexte contient "demande.categorie" (non null), tu DOIS renvoyer EXACTEMENT cette valeur dans "category" ; si elle est null, choisis toi-même la catégorie la plus pertinente.
@@ -101,7 +123,7 @@ RÈGLES DE CONCEPTION
 - Sécurité : pour un débutant, insiste sur la posture, la garde, la respiration. Rien de dangereux. Tiens compte des contraintes/blessures indiquées (adapte ou évite les zones concernées).
 - Pédagogie : explications détaillées, claires, étape par étape. Pour chaque exercice, remplis "tips" (2 à 4 conseils concrets) et "commonMistakes" (1 à 3 erreurs fréquentes à éviter).
 - Variété : évite la monotonie d'une séance à l'autre tout en gardant une cohérence de progression.
-- "coachNote" : explique en 2-3 phrases motivantes POURQUOI cette séance aujourd'hui, en t'appuyant explicitement sur la catégorie, le focus, l'historique et les feedbacks (progression, récupération, points à travailler).
+- "coachNote" : explique en 2-3 phrases motivantes POURQUOI cette séance aujourd'hui, en t'appuyant explicitement sur les états et faits de "progressionCompetences", la catégorie, le focus et les feedbacks. N'invente jamais un acquis.
 
 Réponds EXCLUSIVEMENT en appelant l'outil demandé : "proposer_seance" pour une séance complète, "proposer_exercice" pour un exercice de remplacement.`
 
@@ -202,6 +224,8 @@ export interface GenerationContext {
   /** Présent uniquement si la date a été planifiée : le modèle doit la respecter. */
   demande?: GenerationRequest
   memoire: MemorySummary
+  /** Contrat pur de #4, directement consommable par le planner de prescription de #2. */
+  progressionCompetences: SkillProgressionSnapshot
   historique: HistoryEntry[]
   /** Séances récemment sautées, avec raison : signal de coaching (reprise en douceur, fatigue…). */
   seancesSautees?: SkippedEntry[]
@@ -345,6 +369,7 @@ export function buildGenerationContext(date: string): {
     },
     poids,
     memoire: buildMemory(date, past),
+    progressionCompetences: getSkillProgression(date),
     historique,
   }
 
@@ -484,7 +509,13 @@ export async function generateSessionForDate(
     })
   }
 
-  const session = parsed.data
+  const session: WorkoutSession = {
+    ...parsed.data,
+    blocks: parsed.data.blocks.map((block) => ({
+      ...block,
+      exercises: block.exercises.map(tagExerciseWithSkills),
+    })),
+  }
   const values: NewSession = {
     date,
     status: 'generated',
@@ -525,7 +556,7 @@ export async function generateReplacementExercise(
     ``,
     `Propose UN exercice de remplacement pour « ${current.name} » (bloc « ${block.title} », catégorie ${current.category}).`,
     reason ? `Raison du remplacement : ${reason}.` : `Je souhaite simplement une alternative.`,
-    `Contraintes : reste cohérent avec le bloc et le même type d'effort, garde une durée d'intervalles similaire, respecte le matériel (sac de frappe et poids du corps uniquement) et le niveau débutant. Évite un exercice déjà présent dans la séance.`,
+    `Contraintes : reste cohérent avec le bloc et le même type d'effort, garde une durée d'intervalles similaire, respecte le matériel (sac de frappe et poids du corps uniquement) et le niveau débutant. Évite un exercice déjà présent dans la séance. Renseigne ses skillIds stables ; conserve la cible pédagogique de l'exercice remplacé sauf si la raison demande de la changer.`,
     `Appelle l'outil "proposer_exercice".`,
   ].join('\n')
 
@@ -567,7 +598,7 @@ export async function generateReplacementExercise(
       statusMessage: "L'exercice proposé est invalide. Réessaie.",
     })
   }
-  return parsed.data
+  return tagExerciseWithSkills(parsed.data)
 }
 
 /**

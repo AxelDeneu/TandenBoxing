@@ -87,8 +87,10 @@ describe('workoutSessionSchema', () => {
     expect(r.success).toBe(true)
     if (r.success) {
       const ex = r.data.blocks[0]!.exercises[0]!
+      expect(r.data.curriculumVersion).toBe(1)
       expect(ex.tips).toEqual([])
       expect(ex.commonMistakes).toEqual([])
+      expect(ex.skillIds).toEqual([])
       expect(ex.restAfterSec).toBe(30)
       expect(ex.combo).toBeNull()
     }
@@ -100,6 +102,27 @@ describe('workoutSessionSchema', () => {
 
   it('rejette un focus invalide', () => {
     expect(workoutSessionSchema.safeParse({ ...valid, focus: 'xxx' }).success).toBe(false)
+  })
+
+  it('rejette une version de curriculum inconnue', () => {
+    expect(workoutSessionSchema.safeParse({ ...valid, curriculumVersion: 999 }).success).toBe(false)
+  })
+
+  it('accepte les tags stables et rejette un identifiant de compétence inconnu', () => {
+    const tagged = {
+      ...valid,
+      blocks: [
+        {
+          ...valid.blocks[0]!,
+          exercises: [{ ...valid.blocks[0]!.exercises[0]!, skillIds: ['jab', 'un_deux'] }],
+        },
+      ],
+    }
+    expect(workoutSessionSchema.safeParse(tagged).success).toBe(true)
+
+    const invalid = structuredClone(tagged)
+    invalid.blocks[0]!.exercises[0]!.skillIds = ['mouvement_secret']
+    expect(workoutSessionSchema.safeParse(invalid).success).toBe(false)
   })
 
   it('exige une catégorie de séance', () => {

@@ -64,6 +64,11 @@ drizzle/             # Migrations SQL générées
 
 Voir [DEPLOY.md](./DEPLOY.md) (Dokploy / Docker).
 
+## Progression technique
+
+Le curriculum débutant, les règles de maîtrise et la stratégie de reprise de l'historique sont
+documentés dans [docs/skill-mastery.md](./docs/skill-mastery.md).
+
 ---
 
 _Ceci est un outil de remise en forme, pas un substitut à un coach ou à un avis médical.
