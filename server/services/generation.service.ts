@@ -1,9 +1,17 @@
 import type AnthropicSDK from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import {
+  GeneratedSessionValidationError,
+  resolveGeneratedSession,
+  type GeneratedSessionViolation,
+  type GenerationValidationAttempt,
+} from '../../shared/session-generation-policy'
+import {
   estimateSessionSeconds,
   exerciseSchema,
   SESSION_CATEGORY_META,
+  sessionCategory,
+  workoutFocus,
   workoutSessionSchema,
   type Exercise,
   type WorkoutSession,
@@ -205,6 +213,20 @@ export interface GenerationContext {
   historique: HistoryEntry[]
   /** Séances récemment sautées, avec raison : signal de coaching (reprise en douceur, fatigue…). */
   seancesSautees?: SkippedEntry[]
+}
+
+function logGenerationViolations(
+  date: string,
+  attempt: GenerationValidationAttempt,
+  violations: readonly GeneratedSessionViolation[],
+): void {
+  // Journal strictement structuré : codes, chemins et valeurs bornées, jamais les champs libres.
+  console.error('[generation-policy]', {
+    event: 'session_validation_failed',
+    date,
+    attempt,
+    violations,
+  })
 }
 
 /**
@@ -475,16 +497,81 @@ export async function generateSessionForDate(
     })
   }
 
-  const parsed = workoutSessionSchema.safeParse(toolUse.input)
-  if (!parsed.success) {
-    console.error('[generation] Séance invalide :', parsed.error.issues)
-    throw createError({
-      statusCode: 502,
-      statusMessage: 'La séance générée est invalide. Réessaie.',
+  const requestedCategory = sessionCategory.safeParse(demande?.categorie)
+  const requestedFocus = workoutFocus.safeParse(demande?.focus)
+  let session: WorkoutSession
+  try {
+    session = await resolveGeneratedSession(toolUse.input, {
+      policy: {
+        targetDurationMin: context.dureeCibleMin,
+        requestedCategory: requestedCategory.success ? requestedCategory.data : null,
+        requestedFocus: requestedFocus.success ? requestedFocus.data : null,
+        hasCustomFocus: Boolean(demande?.focusLibre),
+      },
+      onInvalid: (attempt, violations) => logGenerationViolations(date, attempt, violations),
+      correct: async (candidate, violations) => {
+        const correctionPrompt = [
+          `La séance candidate ci-dessous échoue à des règles métier obligatoires.`,
+          `Effectue UNE correction ciblée : conserve le contenu valide et modifie uniquement ce qui est nécessaire pour supprimer toutes les violations.`,
+          `La durée calculée doit être comprise entre 90 % et 100 % de ${context.dureeCibleMin} minutes.`,
+          demande?.categorie
+            ? `La catégorie imposée reste exactement « ${demande.categorie} ».`
+            : `La catégorie peut rester celle de la candidate si elle respecte son profil minimal.`,
+          demande?.focusLibre
+            ? `Le thème libre reste « ${demande.focusLibre} » : renvoie le focus d'énumération le plus proche de ce thème.`
+            : demande?.focus
+              ? `Le focus imposé reste exactement « ${demande.focus} ».`
+              : `Le focus peut rester celui de la candidate.`,
+          `Violations structurées :`,
+          '```json',
+          JSON.stringify(violations, null, 2),
+          '```',
+          `Séance candidate :`,
+          '```json',
+          JSON.stringify(candidate, null, 2),
+          '```',
+          `Appelle l'outil "proposer_seance" avec la séance corrigée complète.`,
+        ].join('\n')
+
+        let correctionResponse
+        try {
+          correctionResponse = await client.messages.create(
+            {
+              model: settingsRow.aiModel,
+              max_tokens: 12_000,
+              system: SYSTEM_BLOCKS,
+              tools: [SESSION_TOOL],
+              tool_choice: { type: 'tool', name: SESSION_TOOL.name },
+              messages: [{ role: 'user', content: correctionPrompt }],
+            },
+            { timeout: 120_000, maxRetries: 1 },
+          )
+        } catch (error) {
+          console.error('[generation] Correction Anthropic échouée :', error)
+          throw createError({
+            statusCode: 502,
+            statusMessage:
+              'La séance générée était invalide et sa correction a échoué. Aucune séance n’a été enregistrée.',
+          })
+        }
+
+        recordUsage(correctionResponse, adjustment ? 'ajustement' : 'seance', date)
+        return correctionResponse.content.find(
+          (block): block is AnthropicSDK.ToolUseBlock => block.type === 'tool_use',
+        )?.input
+      },
     })
+  } catch (error) {
+    if (error instanceof GeneratedSessionValidationError) {
+      throw createError({
+        statusCode: 502,
+        statusMessage:
+          'La séance reste invalide après une tentative de correction. Aucune séance n’a été enregistrée.',
+      })
+    }
+    throw error
   }
 
-  const session = parsed.data
   const values: NewSession = {
     date,
     status: 'generated',
