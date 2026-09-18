@@ -17,7 +17,14 @@ import {
   type Exercise,
   type WorkoutSession,
 } from '../../shared/session-schema'
-import type { WorkoutPrescription } from '../../shared/workout-prescription'
+import {
+  assessSessionVariety,
+  buildVarietyMemory,
+  type ConsolidationIntent,
+  type VarietyAssessment,
+  type VarietyMemory,
+} from '../../shared/session-variety'
+import type { VarietyAwareWorkoutPrescription } from '../../shared/workout-prescription'
 import type { NewSession, Session } from '../database/schema'
 import { buildWorkoutPrescription } from './workout-prescription.service'
 
@@ -93,10 +100,13 @@ PRESCRIPTION DÉTERMINISTE
 - Renvoie TOUJOURS "category" ET "focus".
 
 MÉMOIRE & PROGRESSION
-Le contexte fournit "memoire" : par focus et par catégorie déjà pratiqués, la dernière date, le nombre de jours écoulés et le nombre de fois travaillés ; plus "combosRecents", les combos vus dans les séances récentes.
+Le contexte fournit "memoire" : par focus et par catégorie déjà pratiqués, la dernière date, le nombre de jours écoulés et le nombre de fois travaillés ; plus "combosRecents" et "variete", qui résume les signatures des cinq dernières séances (mouvement, modalité, objectif, combo, bloc et intervalles). "prescription.variety" fournit les budgets et pénalités calculés par l'application.
 - Construis une VRAIE progression : reprends et complexifie ce qui est déjà acquis plutôt que de repartir de zéro.
 - Évite de resservir tels quels les combos de "combosRecents" : varie les enchaînements.
 - Utilise la mémoire pour choisir le contenu et faire progresser les exercices à l'intérieur de la prescription.
+- Sauf consolidation intentionnelle, le chevauchement du CORPS PRINCIPAL avec la séance précédente doit rester inférieur ou égal à "prescription.variety.maxMainOverlap" (30 % par défaut). Varie réellement les familles de mouvements, les combos ET les formats d'intervalles, pas seulement les intitulés.
+- Une répétition au-delà de ce budget est permise pour consolider un acquis (notamment une séance "renforcement"), mais explique alors précisément cette consolidation dans "coachNote".
+- L'échauffement et le retour au calme ont leurs propres budgets : choisis de préférence les premières routines sûres proposées dans "memoire.variete.safeRoutineSuggestions", sans sacrifier la sécurité à la nouveauté.
 - Le contexte peut contenir "seancesSautees" (séances récemment non faites, avec la raison éventuelle) : tiens-en compte — reprise en douceur après une coupure, et allègement si la raison évoque une fatigue ou une blessure.
 
 NOTATION DES COMBOS (boxe anglaise)
@@ -180,6 +190,8 @@ interface MemorySummary {
   parCategorie: Record<string, MemoryStat>
   /** Combos vus dans les séances récentes (dédupliqués) : à ne pas resservir tels quels. */
   combosRecents: string[]
+  /** Signatures et fréquences des cinq dernières séances, calculées sans IA. */
+  variete: VarietyMemory
 }
 
 /** Intention planifiée par l'utilisateur pour cette date. */
@@ -210,10 +222,12 @@ export interface GenerationContext {
   tendance: Record<string, unknown>
   poids: Record<string, unknown> | null
   /** Décisions déterministes que la génération et la future politique de validation partagent. */
-  prescription: WorkoutPrescription
+  prescription: VarietyAwareWorkoutPrescription
   /** Présent uniquement si la date a été planifiée : le modèle doit la respecter. */
   demande?: GenerationRequest
   memoire: MemorySummary
+  /** Mesures calculées après génération et persistées pour l'observabilité. */
+  evaluationVariete?: VarietyAssessment
   historique: HistoryEntry[]
   /** Séances récemment sautées, avec raison : signal de coaching (reprise en douceur, fatigue…). */
   seancesSautees?: SkippedEntry[]
@@ -235,8 +249,8 @@ function logGenerationViolations(
 
 /**
  * Résume la mémoire d'entraînement : pour chaque focus et chaque catégorie déjà pratiqués,
- * l'ancienneté et le nombre de répétitions, plus les combos récents. Sert la progression
- * (reprendre les acquis) et la variété (ne pas resservir les mêmes enchaînements).
+ * l'ancienneté et le nombre de répétitions, plus les combos et signatures récents. Sert la
+ * progression (reprendre les acquis) et la variété (ne pas resservir la même enveloppe).
  */
 function buildMemory(date: string, completed: Session[]): MemorySummary {
   const parFocus: Record<string, MemoryStat> = {}
@@ -273,7 +287,11 @@ function buildMemory(date: string, completed: Session[]): MemorySummary {
     ),
   ]
 
-  return { parFocus, parCategorie, combosRecents }
+  const variete = buildVarietyMemory(
+    completed.map((session) => ({ date: session.date, structure: session.structure })),
+  )
+
+  return { parFocus, parCategorie, combosRecents, variete }
 }
 
 /** Rassemble tout le contexte nécessaire à la génération d'une séance pour `date`. */
@@ -345,6 +363,7 @@ export function buildGenerationContext(date: string): {
     }
   }
 
+  const memoire = buildMemory(date, past)
   const context: GenerationContext = {
     date,
     jour: weekdayLabel(date),
@@ -372,7 +391,7 @@ export function buildGenerationContext(date: string): {
     },
     poids,
     prescription,
-    memoire: buildMemory(date, past),
+    memoire,
     historique,
   }
 
@@ -433,6 +452,7 @@ export async function generateSessionForDate(
       focus: existing.focus,
     })
   }
+  const demande = context.demande
 
   const userPrompt = buildSessionPrompt({
     dateLabel: formatDateFr(date),
@@ -549,6 +569,14 @@ export async function generateSessionForDate(
     throw error
   }
 
+  const prescribedConsolidation = context.prescription.variety.consolidation
+  const consolidation: ConsolidationIntent | undefined =
+    prescribedConsolidation.intentional && prescribedConsolidation.reason
+      ? { intentional: true, reason: prescribedConsolidation.reason }
+      : undefined
+  context.evaluationVariete = assessSessionVariety(session, context.memoire.variete.sessions, {
+    consolidation,
+  })
   const values: NewSession = {
     date,
     status: 'generated',

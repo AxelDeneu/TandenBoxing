@@ -9,6 +9,7 @@ import {
   type SessionCategory,
   type WorkoutFocus,
 } from './session-schema'
+import type { WorkoutVarietyConstraints } from './session-variety'
 
 /** Budget en secondes pour chaque type de bloc générable. Une valeur nulle interdit le bloc. */
 export const blockBudgetsSchema = z.object({
@@ -48,6 +49,10 @@ export const workoutPrescriptionSchema = z.object({
 
 export type BlockBudgets = z.infer<typeof blockBudgetsSchema>
 export type WorkoutPrescription = z.infer<typeof workoutPrescriptionSchema>
+/** Prescription enrichie à la frontière serveur par la mémoire pure de l'issue #3. */
+export type VarietyAwareWorkoutPrescription = WorkoutPrescription & {
+  variety: WorkoutVarietyConstraints
+}
 
 export interface WorkoutPrescriptionRequest {
   category?: SessionCategory | null
