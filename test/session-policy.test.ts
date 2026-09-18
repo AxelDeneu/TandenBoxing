@@ -29,6 +29,7 @@ function makeExercise(
     explanation: 'Consigne',
     tips: [],
     commonMistakes: [],
+    skillIds: [],
     combo,
     comboExplanation: combo ? 'Décodage' : null,
     intervals: { work: seconds, rest: 0, rounds: 1 },
@@ -61,6 +62,7 @@ function makeSession(
 ): WorkoutSession {
   return {
     title: 'Séance',
+    curriculumVersion: 1,
     category,
     focus: 'uppercuts',
     summary: 'Résumé',

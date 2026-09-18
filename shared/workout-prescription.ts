@@ -257,7 +257,11 @@ export function planWorkoutPrescription(input: WorkoutPrescriptionInput): Workou
 
   const profile = WORKOUT_PRESCRIPTION_PROFILES[category]
   const shouldReduceLoad = fatigued || constrained || returningAfterBreak
-  const intensity = shouldReduceLoad ? Math.max(1, profile.intensity - 1) : profile.intensity
+  const intensity = returningAfterBreak
+    ? 1
+    : shouldReduceLoad
+      ? Math.max(1, profile.intensity - 1)
+      : profile.intensity
   const targetSeconds = targetDurationMin * 60
 
   return workoutPrescriptionSchema.parse({

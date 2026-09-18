@@ -1,4 +1,10 @@
 import { daysBetween } from './dates'
+import { getCurriculumSkill, skillIdsForFocus, type SkillId } from './curriculum'
+import {
+  buildSkillProgression,
+  type SkillExposure,
+  type SkillProgressionSnapshot,
+} from './skill-mastery'
 import {
   sessionCategory,
   workoutFocus,
@@ -35,6 +41,8 @@ export interface FocusRecommendation {
 export interface RecommendationInput {
   today: string
   history: RecoHistoryEntry[]
+  /** État calculé par #4. Sans valeur, l'historique de focus est inféré (jamais un compteur seul). */
+  skillProgression?: SkillProgressionSnapshot
   /** Focus candidats (défaut : tous). */
   focuses?: WorkoutFocus[]
   /** Nombre de recommandations (défaut : 4). */
@@ -45,6 +53,25 @@ interface FocusStat {
   count: number
   lastDate: string | null
   daysSince: number | null
+}
+
+/** Repli compatible avec les appelants historiques qui ne disposent que d'un focus par séance. */
+function progressionFromHistory(
+  today: string,
+  history: RecoHistoryEntry[],
+): SkillProgressionSnapshot {
+  const exposures: SkillExposure[] = history.flatMap((entry, index) =>
+    skillIdsForFocus(entry.focus).map((skillId) => ({
+      sessionKey: `${entry.date}:${entry.focus}:${index}`,
+      date: entry.date,
+      skillId,
+      completed: entry.completed,
+      difficulty: entry.difficulty ?? null,
+      energy: entry.energy ?? null,
+      source: 'inferred_focus',
+    })),
+  )
+  return buildSkillProgression(today, exposures)
 }
 
 const RECOVERY_FOCUS: WorkoutFocus = 'fondations'
@@ -60,7 +87,10 @@ export function detectFatigue(
 
   const last3d = recent.filter((e) => daysBetween(e.date, today) <= 3).length
   if (last3d >= 3) {
-    return { fatigued: true, reason: `${last3d} séances en 3 jours — accorde-toi une récupération.` }
+    return {
+      fatigued: true,
+      reason: `${last3d} séances en 3 jours — accorde-toi une récupération.`,
+    }
   }
 
   const window = recent.slice(0, 4)
@@ -71,30 +101,68 @@ export function detectFatigue(
   const avgEnergy = avg(energies)
 
   if (avgDiff != null && avgDiff >= 4) {
-    return { fatigued: true, reason: 'Séances récentes éprouvantes — allège avec de la récupération.' }
+    return {
+      fatigued: true,
+      reason: 'Séances récentes éprouvantes — allège avec de la récupération.',
+    }
   }
   if (avgEnergy != null && avgEnergy <= 2) {
-    return { fatigued: true, reason: 'Énergie basse ces derniers temps — une séance de récupération aiderait.' }
+    return {
+      fatigued: true,
+      reason: 'Énergie basse ces derniers temps — une séance de récupération aiderait.',
+    }
   }
   return { fatigued: false, reason: '' }
 }
 
-/** Catégorie suggérée selon la maîtrise d'un focus (nb de fois travaillé). */
-function categoryForMastery(count: number): SessionCategory {
-  if (count === 0) return 'apprentissage'
-  if (count <= 2) return 'renforcement'
-  return 'enchainement'
+function categoryForProgression(
+  focus: WorkoutFocus,
+  progression: SkillProgressionSnapshot,
+): SessionCategory | null {
+  if (focus === 'cardio') return 'cardio'
+  if (focus === 'gainage') return 'renforcement'
+
+  const skillIds = skillIdsForFocus(focus)
+  if (!skillIds.length) return null
+  if (skillIds.some((id) => progression.eligibleNewSkillIds.includes(id))) return 'apprentissage'
+  if (skillIds.some((id) => progression.mastery[id].state === 'en_consolidation')) {
+    return 'renforcement'
+  }
+  if (skillIds.some((id) => progression.mastery[id].state === 'acquis')) return 'enchainement'
+  // Toutes les compétences de ce focus sont nouvelles mais leurs prérequis manquent.
+  return null
 }
 
-function reasonForFocus(focus: WorkoutFocus, stat: FocusStat, category: SessionCategory): string {
-  if (stat.count === 0) return 'Jamais travaillé — bon moment pour le découvrir.'
+function labels(ids: SkillId[]): string {
+  return ids.map((id) => getCurriculumSkill(id).label).join(', ')
+}
+
+function reasonForFocus(
+  focus: WorkoutFocus,
+  stat: FocusStat,
+  category: SessionCategory,
+  progression: SkillProgressionSnapshot,
+): string {
+  const skillIds = skillIdsForFocus(focus)
+  if (category === 'apprentissage') {
+    const eligible = skillIds.filter((id) => progression.eligibleNewSkillIds.includes(id))
+    return `Nouveauté éligible : ${labels(eligible.slice(0, 1))}.`
+  }
+  if (category === 'renforcement' && skillIds.length) {
+    const review = skillIds.filter((id) => progression.mastery[id].state === 'en_consolidation')
+    const exposureCount = review.reduce((total, id) => total + progression.mastery[id].exposures, 0)
+    return `${labels(review.slice(0, 2))} à consolider (${exposureCount} exposition(s)).`
+  }
+  if (category === 'enchainement' && skillIds.length) {
+    const acquired = skillIds.filter((id) => progression.mastery[id].state === 'acquis')
+    return `Acquis à relier : ${labels(acquired.slice(0, 2))}.`
+  }
+  if (stat.count === 0) return 'Complément physique jamais travaillé.'
   const since =
     stat.daysSince != null && stat.daysSince > 0
       ? `Pas retravaillé depuis ${stat.daysSince} j`
       : 'Travaillé récemment'
-  if (category === 'enchainement') return `${since} — bases acquises (${stat.count}×), prêt à enchaîner.`
-  if (category === 'renforcement') return `${since} — à consolider (${stat.count}×).`
-  return since + '.'
+  return `${since} (${stat.count}×).`
 }
 
 /**
@@ -104,6 +172,7 @@ function reasonForFocus(focus: WorkoutFocus, stat: FocusStat, category: SessionC
  */
 export function recommendFocuses(input: RecommendationInput): FocusRecommendation[] {
   const { today, history } = input
+  const progression = input.skillProgression ?? progressionFromHistory(today, history)
   const focuses = input.focuses ?? (workoutFocus.options as WorkoutFocus[])
   const limit = input.limit ?? 4
   const completed = history.filter((e) => e.completed)
@@ -136,16 +205,27 @@ export function recommendFocuses(input: RecommendationInput): FocusRecommendatio
 
   const fatigue = detectFatigue(today, completed)
   if (fatigue.fatigued) {
-    recos.push({ category: 'recuperation', focus: RECOVERY_FOCUS, reason: fatigue.reason, score: 1000 })
+    recos.push({
+      category: 'recuperation',
+      focus: RECOVERY_FOCUS,
+      reason: fatigue.reason,
+      score: 1000,
+    })
   }
 
   for (const focus of ordered) {
     if (recos.length >= limit) break
     if (recos.some((r) => r.focus === focus)) continue
     const stat = stats.get(focus)!
-    const category = categoryForMastery(stat.count)
+    const category = categoryForProgression(focus, progression)
+    if (!category) continue
     const score = (stat.daysSince ?? NEVER) + (stat.count === 0 ? 100 : 0)
-    recos.push({ category, focus, reason: reasonForFocus(focus, stat, category), score })
+    recos.push({
+      category,
+      focus,
+      reason: reasonForFocus(focus, stat, category, progression),
+      score,
+    })
   }
 
   return recos.slice(0, limit)
