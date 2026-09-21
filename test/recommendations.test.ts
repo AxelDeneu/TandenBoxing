@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import {
-  detectFatigue,
-  recommendFocuses,
-  type RecoHistoryEntry,
-} from '../shared/recommendations'
+import type { SkillId } from '../shared/curriculum'
+import { detectFatigue, recommendFocuses, type RecoHistoryEntry } from '../shared/recommendations'
+import { buildSkillProgression, type SkillExposure } from '../shared/skill-mastery'
 
 const TODAY = '2026-07-16'
 
@@ -16,13 +14,36 @@ function done(
   return { date, focus, category: 'renforcement', completed: true, ...extra }
 }
 
+function skillExposure(
+  skillId: SkillId,
+  date: string,
+  extra: Partial<SkillExposure> = {},
+): SkillExposure {
+  return {
+    sessionKey: `${skillId}:${date}`,
+    skillId,
+    date,
+    completed: true,
+    difficulty: 2,
+    energy: 4,
+    source: 'declared',
+    ...extra,
+  }
+}
+
+function mastered(skillId: SkillId): SkillExposure[] {
+  return ['2026-07-01', '2026-07-05', '2026-07-10'].map((date) => skillExposure(skillId, date))
+}
+
+const prerequisitesMastered = () => [...mastered('posture_garde'), ...mastered('appuis')]
+
 describe('recommendFocuses — négligence', () => {
   it('sans historique, propose de découvrir les fondations en apprentissage', () => {
     const recos = recommendFocuses({ today: TODAY, history: [] })
-    expect(recos).toHaveLength(4)
+    expect(recos).toHaveLength(3)
     expect(recos[0]!.focus).toBe('fondations')
     expect(recos[0]!.category).toBe('apprentissage')
-    expect(recos[0]!.reason).toContain('Jamais travaillé')
+    expect(recos[0]!.reason).toContain('Nouveauté éligible')
   })
 
   it('priorise un focus jamais fait devant un focus travaillé récemment', () => {
@@ -31,6 +52,10 @@ describe('recommendFocuses — négligence', () => {
       history: [done('2026-07-15', 'uppercuts')],
       focuses: ['uppercuts', 'defense'],
       limit: 2,
+      skillProgression: buildSkillProgression(TODAY, [
+        ...prerequisitesMastered(),
+        skillExposure('uppercuts', '2026-07-15'),
+      ]),
     })
     expect(recos[0]!.focus).toBe('defense') // jamais fait
     expect(recos[1]!.focus).toBe('uppercuts')
@@ -42,6 +67,11 @@ describe('recommendFocuses — négligence', () => {
       history: [done('2026-07-14', 'crochets'), done('2026-06-01', 'defense')],
       focuses: ['crochets', 'defense'],
       limit: 2,
+      skillProgression: buildSkillProgression(TODAY, [
+        ...prerequisitesMastered(),
+        skillExposure('crochets', '2026-07-14'),
+        skillExposure('defenses', '2026-06-01'),
+      ]),
     })
     expect(recos[0]!.focus).toBe('defense') // 45 j
     expect(recos[1]!.focus).toBe('crochets') // 2 j
@@ -59,7 +89,13 @@ describe('recommendFocuses — négligence', () => {
 
 describe('recommendFocuses — catégorie selon la maîtrise', () => {
   it('jamais fait → apprentissage', () => {
-    const [reco] = recommendFocuses({ today: TODAY, history: [], focuses: ['uppercuts'], limit: 1 })
+    const [reco] = recommendFocuses({
+      today: TODAY,
+      history: [],
+      focuses: ['uppercuts'],
+      limit: 1,
+      skillProgression: buildSkillProgression(TODAY, prerequisitesMastered()),
+    })
     expect(reco!.category).toBe('apprentissage')
   })
 
@@ -69,12 +105,17 @@ describe('recommendFocuses — catégorie selon la maîtrise', () => {
       history: [done('2026-06-10', 'uppercuts'), done('2026-06-20', 'uppercuts')],
       focuses: ['uppercuts'],
       limit: 1,
+      skillProgression: buildSkillProgression(TODAY, [
+        ...prerequisitesMastered(),
+        skillExposure('uppercuts', '2026-06-10'),
+        skillExposure('uppercuts', '2026-06-20'),
+      ]),
     })
     expect(reco!.category).toBe('renforcement')
     expect(reco!.reason).toContain('consolider')
   })
 
-  it('bien maîtrisé (3+) → enchainement', () => {
+  it('trois réussites avec feedback et prérequis acquis → enchainement', () => {
     const [reco] = recommendFocuses({
       today: TODAY,
       history: [
@@ -84,9 +125,33 @@ describe('recommendFocuses — catégorie selon la maîtrise', () => {
       ],
       focuses: ['uppercuts'],
       limit: 1,
+      skillProgression: buildSkillProgression(TODAY, [
+        ...prerequisitesMastered(),
+        ...mastered('uppercuts'),
+      ]),
     })
     expect(reco!.category).toBe('enchainement')
-    expect(reco!.reason).toContain('enchaîner')
+    expect(reco!.reason).toContain('Acquis')
+  })
+
+  it('trois occurrences sans feedback restent en renforcement', () => {
+    const history = [
+      done('2026-07-01', 'uppercuts'),
+      done('2026-07-05', 'uppercuts'),
+      done('2026-07-10', 'uppercuts'),
+    ]
+    const neutral = history.map((entry) =>
+      skillExposure('uppercuts', entry.date, { difficulty: null, energy: null }),
+    )
+    const [reco] = recommendFocuses({
+      today: TODAY,
+      history,
+      focuses: ['uppercuts'],
+      limit: 1,
+      skillProgression: buildSkillProgression(TODAY, [...prerequisitesMastered(), ...neutral]),
+    })
+    expect(reco!.category).toBe('renforcement')
+    expect(reco!.reason).toContain('consolider')
   })
 
   it('ignore les séances non faites dans le calcul de maîtrise', () => {
@@ -99,6 +164,12 @@ describe('recommendFocuses — catégorie selon la maîtrise', () => {
       ],
       focuses: ['uppercuts'],
       limit: 1,
+      skillProgression: buildSkillProgression(TODAY, [
+        ...prerequisitesMastered(),
+        skillExposure('uppercuts', '2026-06-10'),
+        skillExposure('uppercuts', '2026-06-20', { completed: false }),
+        skillExposure('uppercuts', '2026-06-30', { completed: false }),
+      ]),
     })
     // Une seule séance réellement faite → on consolide, on n'enchaîne pas.
     expect(reco!.category).toBe('renforcement')
