@@ -1,9 +1,14 @@
 import {
   planWorkoutPrescription,
-  type WorkoutPrescription,
+  type VarietyAwareWorkoutPrescription,
   type WorkoutPrescriptionRequest,
 } from '../../shared/workout-prescription'
 import { sessionCategory, workoutFocus } from '../../shared/session-schema'
+import {
+  buildVarietyMemory,
+  buildWorkoutVarietyConstraints,
+  type ConsolidationIntent,
+} from '../../shared/session-variety'
 
 type PrescriptionOverrides = Omit<WorkoutPrescriptionRequest, 'category' | 'focus'> & {
   category?: string | null
@@ -17,10 +22,10 @@ type PrescriptionOverrides = Omit<WorkoutPrescriptionRequest, 'category' | 'focu
 export function buildWorkoutPrescription(
   date: string,
   overrides: PrescriptionOverrides = {},
-): WorkoutPrescription {
+): VarietyAwareWorkoutPrescription {
   const settingsRow = getSettings()
   const profileRow = getProfile()
-  const plan = getPlan(date)
+  const sessionPlan = getPlan(date)
   // Une génération passée ne doit jamais apprendre d'une séance située dans son futur.
   const completed = listCompletedSessions().filter((session) => session.date < date)
   const feedbackBySessionId = new Map(
@@ -40,12 +45,12 @@ export function buildWorkoutPrescription(
     ]),
   )
 
-  const rawCategory = overrides.category !== undefined ? overrides.category : plan?.category
-  const rawFocus = overrides.focus !== undefined ? overrides.focus : plan?.focus
+  const rawCategory = overrides.category !== undefined ? overrides.category : sessionPlan?.category
+  const rawFocus = overrides.focus !== undefined ? overrides.focus : sessionPlan?.focus
   const parsedCategory = sessionCategory.safeParse(rawCategory)
   const parsedFocus = workoutFocus.safeParse(rawFocus)
 
-  return planWorkoutPrescription({
+  const prescription = planWorkoutPrescription({
     today: date,
     targetDurationMin: settingsRow.targetDurationMin,
     constraints: profileRow.constraints,
@@ -67,9 +72,27 @@ export function buildWorkoutPrescription(
     request: {
       category: parsedCategory.success ? parsedCategory.data : null,
       focus: parsedFocus.success ? parsedFocus.data : null,
-      customFocus: overrides.customFocus !== undefined ? overrides.customFocus : plan?.customFocus,
-      durationMin: overrides.durationMin !== undefined ? overrides.durationMin : plan?.durationMin,
-      note: overrides.note !== undefined ? overrides.note : plan?.note,
+      customFocus:
+        overrides.customFocus !== undefined ? overrides.customFocus : sessionPlan?.customFocus,
+      durationMin:
+        overrides.durationMin !== undefined ? overrides.durationMin : sessionPlan?.durationMin,
+      note: overrides.note !== undefined ? overrides.note : sessionPlan?.note,
     },
   })
+
+  const varietyMemory = buildVarietyMemory(
+    completed.map((session) => ({ date: session.date, structure: session.structure })),
+  )
+  const consolidation: ConsolidationIntent | undefined =
+    prescription.category === 'renforcement'
+      ? {
+          intentional: true,
+          reason: `La prescription de renforcement consolide intentionnellement le focus ${prescription.focus}.`,
+        }
+      : undefined
+
+  return {
+    ...prescription,
+    variety: buildWorkoutVarietyConstraints(varietyMemory, consolidation),
+  }
 }
