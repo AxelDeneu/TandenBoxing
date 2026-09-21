@@ -21,7 +21,8 @@
     "format:check": "prettier --check .",
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "eval:generator": "tsx evaluation/cli.ts"
   },
   "engines": {
     "node": ">=26"
