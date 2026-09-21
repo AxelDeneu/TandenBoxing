@@ -38,14 +38,15 @@ npm run dev                 # http://localhost:3000
 
 ## Scripts utiles
 
-| Script                | Rôle                                             |
-| --------------------- | ------------------------------------------------ |
-| `npm run dev`         | Serveur de développement                         |
-| `npm run build`       | Build de production (`.output`)                  |
-| `npm run db:generate` | Génère une migration depuis le schéma Drizzle    |
-| `npm run db:migrate`  | Applique les migrations                          |
-| `npm run db:studio`   | Explorateur de base Drizzle                      |
-| `npm run icons`       | Régénère les icônes PWA depuis `public/icon.svg` |
+| Script                   | Rôle                                                      |
+| ------------------------ | --------------------------------------------------------- |
+| `npm run dev`            | Serveur de développement                                  |
+| `npm run build`          | Build de production (`.output`)                           |
+| `npm run db:generate`    | Génère une migration depuis le schéma Drizzle             |
+| `npm run db:migrate`     | Applique les migrations                                   |
+| `npm run db:studio`      | Explorateur de base Drizzle                               |
+| `npm run icons`          | Régénère les icônes PWA depuis `public/icon.svg`          |
+| `npm run eval:generator` | Évalue hors ligne le générateur sur le corpus synthétique |
 
 ## Structure
 

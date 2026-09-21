@@ -1,5 +1,6 @@
 import type AnthropicSDK from '@anthropic-ai/sdk'
 import { z } from 'zod'
+import { GENERATOR_VERSIONS, type GeneratorVersions } from '../../shared/generator-version'
 import { buildSessionPrompt } from '../../shared/generation-prompt'
 import {
   GeneratedSessionValidationError,
@@ -214,6 +215,8 @@ interface SkippedEntry {
 }
 
 export interface GenerationContext {
+  /** Versions persistées avec la séance pour attribuer toute évolution ou régression. */
+  generatorVersions: GeneratorVersions
   date: string
   jour: string
   dureeCibleMin: number
@@ -365,6 +368,7 @@ export function buildGenerationContext(date: string): {
 
   const memoire = buildMemory(date, past)
   const context: GenerationContext = {
+    generatorVersions: GENERATOR_VERSIONS,
     date,
     jour: weekdayLabel(date),
     dureeCibleMin,
@@ -454,6 +458,7 @@ export async function generateSessionForDate(
   }
   const demande = context.demande
 
+  const { demande } = context
   const userPrompt = buildSessionPrompt({
     dateLabel: formatDateFr(date),
     context,
