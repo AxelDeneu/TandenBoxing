@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import issue1PolicyAdapter from './adapters/issue-1-policy'
+import sessionPolicyAdapter from './adapters/session-policy'
 import { formatReadableReport, formatReportJson } from './report'
 import { compareReports, evaluateCandidate } from './runner'
 import type { AiEvaluationAdapter, CandidateRun, EvaluationReport, PolicyAdapter } from './types'
@@ -24,7 +24,7 @@ function usage(): string {
     'Options:',
     '  --candidate <module>       module exportant candidateRun (défaut: référence synthétique)',
     '  --compare <module>         candidat avant, évalué sur le même corpus',
-    '  --policy <module>          module exportant policyAdapter (#1)',
+    '  --policy <module>          module exportant un policyAdapter alternatif',
     '  --output <fichier>         rapport JSON (défaut: evaluation/output/report.json)',
     '  --ai-adapter <module>      active explicitement une évaluation IA optionnelle',
     '  --ai-budget-usd <montant>  budget maximal obligatoire avec --ai-adapter',
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
     : referenceCandidate
   const policyAdapter = options.policyPath
     ? await loadPolicy(options.policyPath)
-    : issue1PolicyAdapter
+    : sessionPolicyAdapter
 
   let report: EvaluationReport = await evaluateCandidate(SYNTHETIC_CORPUS, candidate, policyAdapter)
 

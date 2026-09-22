@@ -1,5 +1,6 @@
 import type { WorkoutPrescription } from './workout-prescription'
 import type { WorkoutVarietyConstraints } from './session-variety'
+import type { PrescriptionSkillSelection, SkillProgressionSnapshot } from './skill-mastery'
 
 export interface GenerationPromptRequest {
   categorie: string | null
@@ -11,8 +12,12 @@ export interface GenerationPromptRequest {
 /** Sous-ensemble stable du contexte requis pour construire le prompt fournisseur. */
 export interface GenerationPromptContext {
   dureeCibleMin: number
-  prescription: WorkoutPrescription & { variety?: WorkoutVarietyConstraints }
+  prescription: WorkoutPrescription & {
+    skillSelection?: PrescriptionSkillSelection
+    variety?: WorkoutVarietyConstraints
+  }
   demande?: GenerationPromptRequest
+  progressionCompetences?: SkillProgressionSnapshot
 }
 
 export interface SessionPromptInput {
@@ -46,6 +51,18 @@ export function buildSessionPrompt(input: SessionPromptInput): string {
     `- Budgets de blocs à réaliser :`,
     ...positiveBudgets,
     `- N'introduis pas plus de ${prescription.maxNewTechniques} technique(s) nouvelle(s).`,
+    ...(prescription.skillSelection
+      ? [
+          prescription.skillSelection.newSkillId
+            ? `- Seule nouvelle compétence autorisée : ${prescription.skillSelection.newSkillId}.`
+            : `- Aucune nouvelle compétence ne doit être introduite.`,
+          `- Compétences à consolider : ${prescription.skillSelection.consolidatedSkillIds.join(', ') || 'aucune'}.`,
+          `- Pédagogie prescrite : ${prescription.skillSelection.pedagogy}.`,
+          ...prescription.skillSelection.coachNoteFacts.map(
+            (fact) => `- Fait vérifié pour coachNote : ${fact}`,
+          ),
+        ]
+      : []),
     ...(prescription.variety
       ? [
           `- Chevauchement maximal du corps principal avec la séance précédente : ${Math.round(prescription.variety.maxMainOverlap * 100)} %.`,

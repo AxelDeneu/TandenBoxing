@@ -40,6 +40,16 @@ const skipLoading = ref(false)
 const skipReason = ref('')
 const toast = useToast()
 
+const dialogs = {
+  reschedule: showReschedule,
+  deleteSession: showDelete,
+  skip: showSkip,
+} as const
+
+function setDialog(dialog: keyof typeof dialogs, visible: boolean): void {
+  dialogs[dialog].value = visible
+}
+
 async function markSkipped() {
   skipLoading.value = true
   try {
@@ -50,7 +60,11 @@ async function markSkipped() {
     showSkip.value = false
     skipReason.value = ''
     await refresh()
-    toast.add({ title: 'Séance marquée comme sautée', icon: 'i-lucide-calendar-off', color: 'success' })
+    toast.add({
+      title: 'Séance marquée comme sautée',
+      icon: 'i-lucide-calendar-off',
+      color: 'success',
+    })
   } catch (e: any) {
     toast.add({
       title: 'Échec',
@@ -124,12 +138,7 @@ async function deleteSession() {
             <UBadge color="primary" variant="soft" :icon="FOCUS_META[data.focus]?.icon">
               {{ FOCUS_META[data.focus]?.label ?? data.focus }}
             </UBadge>
-            <UBadge
-              v-if="isCompleted"
-              color="success"
-              variant="soft"
-              icon="i-lucide-check"
-            >
+            <UBadge v-if="isCompleted" color="success" variant="soft" icon="i-lucide-check">
               Terminée
             </UBadge>
             <UBadge
@@ -180,27 +189,27 @@ async function deleteSession() {
         <div class="grid grid-cols-3 gap-3 text-center">
           <div>
             <p class="text-lg font-bold">
-              {{ data.feedback.overallDifficulty ?? '—'
+              {{ ratedFeedback.overallDifficulty ?? '—'
               }}<span class="text-sm text-dimmed">/5</span>
             </p>
             <p class="text-xs text-muted">Difficulté</p>
           </div>
           <div>
             <p class="text-lg font-bold">
-              {{ data.feedback.energyLevel ?? '—' }}<span class="text-sm text-dimmed">/5</span>
+              {{ ratedFeedback.energyLevel ?? '—' }}<span class="text-sm text-dimmed">/5</span>
             </p>
             <p class="text-xs text-muted">Énergie</p>
           </div>
           <div>
             <p class="text-lg font-bold">
-              {{ data.feedback.enjoyment ?? '—' }}<span class="text-sm text-dimmed">/5</span>
+              {{ ratedFeedback.enjoyment ?? '—' }}<span class="text-sm text-dimmed">/5</span>
             </p>
             <p class="text-xs text-muted">Plaisir</p>
           </div>
         </div>
-        <div v-if="data.feedback.soreness?.length" class="mt-3 flex flex-wrap gap-1.5">
+        <div v-if="ratedFeedback.soreness.length" class="mt-3 flex flex-wrap gap-1.5">
           <UBadge
-            v-for="z in data.feedback.soreness"
+            v-for="z in ratedFeedback.soreness"
             :key="z"
             color="neutral"
             variant="soft"
@@ -209,8 +218,8 @@ async function deleteSession() {
             {{ z }}
           </UBadge>
         </div>
-        <p v-if="data.feedback.comment" class="mt-3 text-sm text-muted">
-          « {{ data.feedback.comment }} »
+        <p v-if="ratedFeedback.comment" class="mt-3 text-sm text-muted">
+          « {{ ratedFeedback.comment }} »
         </p>
       </UCard>
 
@@ -252,7 +261,7 @@ async function deleteSession() {
         color="neutral"
         variant="ghost"
         icon="i-lucide-calendar-off"
-        @click="showSkip = true"
+        @click="setDialog('skip', true)"
       >
         Marquer comme sautée
       </UButton>
@@ -262,7 +271,7 @@ async function deleteSession() {
         color="neutral"
         variant="ghost"
         icon="i-lucide-calendar-clock"
-        @click="showReschedule = true"
+        @click="setDialog('reschedule', true)"
       >
         Reporter à une autre date
       </UButton>
@@ -272,7 +281,7 @@ async function deleteSession() {
         color="error"
         variant="ghost"
         icon="i-lucide-trash-2"
-        @click="showDelete = true"
+        @click="setDialog('deleteSession', true)"
       >
         Supprimer la séance
       </UButton>
@@ -292,7 +301,9 @@ async function deleteSession() {
         </template>
         <template #footer>
           <div class="flex w-full justify-end gap-2">
-            <UButton color="neutral" variant="ghost" @click="showSkip = false">Annuler</UButton>
+            <UButton color="neutral" variant="ghost" @click="setDialog('skip', false)">
+              Annuler
+            </UButton>
             <UButton
               color="primary"
               icon="i-lucide-calendar-off"
@@ -318,7 +329,9 @@ async function deleteSession() {
       >
         <template #footer>
           <div class="flex w-full justify-end gap-2">
-            <UButton color="neutral" variant="ghost" @click="showDelete = false">Annuler</UButton>
+            <UButton color="neutral" variant="ghost" @click="setDialog('deleteSession', false)">
+              Annuler
+            </UButton>
             <UButton
               color="error"
               icon="i-lucide-trash-2"

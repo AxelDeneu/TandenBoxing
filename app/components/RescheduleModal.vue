@@ -7,6 +7,10 @@ const toast = useToast()
 const newDate = ref('')
 const loading = ref(false)
 
+function close(): void {
+  open.value = false
+}
+
 watch(open, (isOpen) => {
   if (isOpen) newDate.value = addDaysIso(props.date, 1)
 })
@@ -51,7 +55,7 @@ async function submit() {
     </template>
     <template #footer>
       <div class="flex w-full justify-end gap-2">
-        <UButton color="neutral" variant="ghost" @click="open = false">Annuler</UButton>
+        <UButton color="neutral" variant="ghost" @click="close">Annuler</UButton>
         <UButton color="primary" icon="i-lucide-calendar-check" :loading="loading" @click="submit">
           Reporter
         </UButton>

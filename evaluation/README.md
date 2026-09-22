@@ -15,8 +15,8 @@ npm run eval:generator
 ```
 
 La commande affiche un résumé et écrit le rapport stable dans
-`evaluation/output/report.json`. Tant que #1 n’est pas raccordée, le seuil de conformité
-échoue explicitement avec `oracle indisponible`; toutes les autres métriques sont calculées.
+`evaluation/output/report.json`. Elle utilise par défaut la politique active
+`shared/session-policy.ts` et termine avec un code non nul si un seuil bloquant échoue.
 Le dossier `evaluation/output/` est ignoré par Git.
 
 Un candidat est un module TypeScript ou JavaScript qui exporte `candidateRun` (ou un export
@@ -52,24 +52,19 @@ Les seuils bloquants initiaux sont volontairement stricts : 100 % des cas doiven
 évalués sans violation obligatoire et aucun cas ne peut dépasser sa durée cible. Une
 politique absente est un échec, pas un succès silencieux.
 
-## Raccord à #1 (seul reliquat)
+## Politique de validation
 
-Le banc ne recopie aucune règle métier. `evaluation/adapters/issue-1-policy.ts` est aligné
-sur l’API `validateSessionPolicy` publiée par la branche #1 (commit `d045301`) et convertit
-uniquement ses violations au format du rapport. Son import reste dynamique afin que cette
-branche #5 compile et se teste indépendamment.
-
-Après fusion de #1, rebaser cette branche suffit pour activer automatiquement l’oracle. Un
-autre adaptateur compatible peut aussi être sélectionné explicitement :
+Le banc ne recopie aucune règle métier. `evaluation/adapters/session-policy.ts` appelle
+directement `validateSessionPolicy` et convertit uniquement ses violations au format du rapport.
+La version `session-policy/v1` est partagée avec les versions persistées dans
+`generationContext`. Un autre adaptateur compatible peut être sélectionné explicitement :
 
 ```bash
 npm run eval:generator -- --policy ./chemin/autre-policy.ts
 ```
 
-Au même moment, remplacer `issue-1/pending` par `session-policy/v1` dans
-`shared/generator-version.ts`. Ces versions sont persistées dans `generationContext` pour
-relier chaque nouvelle séance à la configuration qui l’a produite. C’est le seul raccord
-restant ; aucun code du validateur #1 n’est dupliqué ici.
+Les versions du planner, de la politique, du prompt et du contrat de sortie sont définies dans
+`shared/generator-version.ts`, persistées dans `generationContext` et reprises dans chaque rapport.
 
 ## Évaluation IA optionnelle
 

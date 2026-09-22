@@ -18,6 +18,21 @@ const showDeletePlan = ref(false)
 const editing = ref(false)
 const loading = ref(false)
 
+const dialogs = {
+  reschedule: showReschedule,
+  regenerate: showRegen,
+  deleteSession: showDelete,
+  deletePlan: showDeletePlan,
+} as const
+
+function setDialog(dialog: keyof typeof dialogs, visible: boolean): void {
+  dialogs[dialog].value = visible
+}
+
+function startEditing(): void {
+  editing.value = true
+}
+
 /** Catégorie affichée : celle de la séance, sinon celle de l'intention. */
 const category = computed(() => session.value?.category ?? plan.value?.category ?? null)
 const categoryMeta = computed(() =>
@@ -211,7 +226,7 @@ async function deletePlan() {
                 color="neutral"
                 variant="ghost"
                 icon="i-lucide-calendar-clock"
-                @click="showReschedule = true"
+                @click="setDialog('reschedule', true)"
               >
                 Reporter
               </UButton>
@@ -220,7 +235,7 @@ async function deletePlan() {
                 color="neutral"
                 variant="ghost"
                 icon="i-lucide-refresh-cw"
-                @click="showRegen = true"
+                @click="setDialog('regenerate', true)"
               >
                 Régénérer
               </UButton>
@@ -229,7 +244,7 @@ async function deletePlan() {
                 color="error"
                 variant="ghost"
                 icon="i-lucide-trash-2"
-                @click="showDelete = true"
+                @click="setDialog('deleteSession', true)"
               >
                 Supprimer
               </UButton>
@@ -302,7 +317,7 @@ async function deletePlan() {
               color="neutral"
               variant="soft"
               icon="i-lucide-pencil"
-              @click="editing = true"
+              @click="startEditing"
             >
               Modifier
             </UButton>
@@ -311,7 +326,7 @@ async function deletePlan() {
               color="neutral"
               variant="ghost"
               icon="i-lucide-calendar-clock"
-              @click="showReschedule = true"
+              @click="setDialog('reschedule', true)"
             >
               Reporter
             </UButton>
@@ -320,7 +335,7 @@ async function deletePlan() {
               color="error"
               variant="ghost"
               icon="i-lucide-trash-2"
-              @click="showDeletePlan = true"
+              @click="setDialog('deletePlan', true)"
             >
               Annuler la planification
             </UButton>
@@ -359,7 +374,9 @@ async function deletePlan() {
   >
     <template #footer>
       <div class="flex w-full justify-end gap-2">
-        <UButton color="neutral" variant="ghost" @click="showRegen = false">Annuler</UButton>
+        <UButton color="neutral" variant="ghost" @click="setDialog('regenerate', false)">
+          Annuler
+        </UButton>
         <UButton color="primary" icon="i-lucide-refresh-cw" :loading="loading" @click="regenerate">
           Régénérer
         </UButton>
@@ -374,7 +391,9 @@ async function deletePlan() {
   >
     <template #footer>
       <div class="flex w-full justify-end gap-2">
-        <UButton color="neutral" variant="ghost" @click="showDelete = false">Annuler</UButton>
+        <UButton color="neutral" variant="ghost" @click="setDialog('deleteSession', false)">
+          Annuler
+        </UButton>
         <UButton color="error" icon="i-lucide-trash-2" :loading="loading" @click="deleteSession">
           Supprimer
         </UButton>
@@ -389,7 +408,9 @@ async function deletePlan() {
   >
     <template #footer>
       <div class="flex w-full justify-end gap-2">
-        <UButton color="neutral" variant="ghost" @click="showDeletePlan = false">Annuler</UButton>
+        <UButton color="neutral" variant="ghost" @click="setDialog('deletePlan', false)">
+          Annuler
+        </UButton>
         <UButton color="error" icon="i-lucide-trash-2" :loading="loading" @click="deletePlan">
           Supprimer
         </UButton>

@@ -33,6 +33,10 @@ const CIRC = 2 * Math.PI * 100
 // Sur mobile le guide est escamoté dans un slideover ; sur desktop il est toujours visible.
 const guideOpen = ref(false)
 
+function openGuide(): void {
+  guideOpen.value = true
+}
+
 // Séance interrompue (rechargement, crash, appel entrant) : on laisse l'utilisateur trancher.
 const resumeAt = computed(() => {
   const snap = savedSnapshot.value
@@ -74,6 +78,10 @@ onMounted(() => {
 })
 
 const confirmExitOpen = ref(false)
+
+function continueSession(): void {
+  confirmExitOpen.value = false
+}
 
 /** Une séance entamée ne se quitte pas sur une mauvaise tape — mais l'état reste repris. */
 function requestExit() {
@@ -191,7 +199,7 @@ function restart() {
           size="sm"
           label="Guide"
           class="lg:hidden"
-          @click="guideOpen = true"
+          @click="openGuide"
         />
       </div>
 
@@ -297,9 +305,7 @@ function restart() {
     >
       <template #footer>
         <div class="flex w-full justify-end gap-2">
-          <UButton color="neutral" variant="ghost" @click="confirmExitOpen = false">
-            Continuer
-          </UButton>
+          <UButton color="neutral" variant="ghost" @click="continueSession"> Continuer </UButton>
           <UButton color="primary" icon="i-lucide-log-out" @click="exit">Quitter</UButton>
         </div>
       </template>

@@ -6,6 +6,8 @@ import {
   type WorkoutSession,
 } from './session-schema'
 
+export const SESSION_POLICY_VERSION = 'session-policy/v1'
+
 /** Une séance générée doit remplir au moins 90 % de la durée demandée. */
 export const MIN_TARGET_DURATION_RATIO = 0.9
 

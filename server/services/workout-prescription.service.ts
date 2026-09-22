@@ -5,6 +5,11 @@ import {
 } from '../../shared/workout-prescription'
 import { sessionCategory, workoutFocus } from '../../shared/session-schema'
 import {
+  applySkillGuidanceToPrescription,
+  buildSkillGuidanceForFocus,
+  type SkillProgressionSnapshot,
+} from '../../shared/skill-mastery'
+import {
   buildVarietyMemory,
   buildWorkoutVarietyConstraints,
   type ConsolidationIntent,
@@ -22,6 +27,7 @@ type PrescriptionOverrides = Omit<WorkoutPrescriptionRequest, 'category' | 'focu
 export function buildWorkoutPrescription(
   date: string,
   overrides: PrescriptionOverrides = {},
+  progression: SkillProgressionSnapshot = getSkillProgression(date),
 ): VarietyAwareWorkoutPrescription {
   const settingsRow = getSettings()
   const profileRow = getProfile()
@@ -80,6 +86,11 @@ export function buildWorkoutPrescription(
     },
   })
 
+  const skillAwarePrescription = applySkillGuidanceToPrescription(
+    prescription,
+    buildSkillGuidanceForFocus(progression, prescription.focus),
+    progression.curriculumVersion,
+  )
   const varietyMemory = buildVarietyMemory(
     completed.map((session) => ({ date: session.date, structure: session.structure })),
   )
@@ -92,7 +103,7 @@ export function buildWorkoutPrescription(
       : undefined
 
   return {
-    ...prescription,
+    ...skillAwarePrescription,
     variety: buildWorkoutVarietyConstraints(varietyMemory, consolidation),
   }
 }
