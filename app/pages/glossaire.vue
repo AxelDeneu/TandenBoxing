@@ -27,6 +27,10 @@ const groups = computed(() => {
 })
 
 const totalMatches = computed(() => groups.value.reduce((n, g) => n + g.entries.length, 0))
+
+function clearQuery(): void {
+  query.value = ''
+}
 </script>
 
 <template>
@@ -51,7 +55,7 @@ const totalMatches = computed(() => groups.value.reduce((n, g) => n + g.entries.
           variant="link"
           size="sm"
           aria-label="Effacer"
-          @click="query = ''"
+          @click="clearQuery"
         />
       </template>
     </UInput>

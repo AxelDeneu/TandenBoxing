@@ -328,18 +328,20 @@ export function buildSkillGuidanceForFocus(
 export function applySkillGuidanceToPrescription<T extends PlannerPrescriptionContract>(
   prescription: T,
   guidance: SkillPrescriptionGuidance,
-  curriculumVersion = BEGINNER_CURRICULUM.version,
+  curriculumVersion: number = BEGINNER_CURRICULUM.version,
 ): SkillAwarePrescription<T> {
+  const newSkillId = prescription.maxNewTechniques > 0 ? guidance.newSkillId : null
+
   return {
     ...prescription,
     intensity:
       guidance.intensityCap == null
         ? prescription.intensity
         : Math.min(prescription.intensity, guidance.intensityCap),
-    maxNewTechniques: guidance.newSkillId ? Math.min(prescription.maxNewTechniques, 1) : 0,
+    maxNewTechniques: newSkillId ? Math.min(prescription.maxNewTechniques, 1) : 0,
     skillSelection: {
       curriculumVersion,
-      newSkillId: guidance.newSkillId,
+      newSkillId,
       consolidatedSkillIds: guidance.consolidatedSkillIds,
       missingPrerequisiteIds: guidance.missingPrerequisiteIds,
       pedagogy: guidance.pedagogy,

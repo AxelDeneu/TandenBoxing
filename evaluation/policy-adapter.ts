@@ -7,17 +7,11 @@ export interface SourcePolicyViolation {
   details?: Readonly<Record<string, unknown>>
 }
 
-/**
- * Adapte le validateur livré par #1 sans recopier aucune règle métier dans le banc.
- * Le petit module de raccord doit seulement fournir la fonction `validate` et la
- * classification des violations bloquantes exposées par #1.
- */
+/** Adapte un validateur sans recopier aucune règle métier dans le banc. */
 export function createPolicyAdapter<TViolation extends SourcePolicyViolation>(options: {
   id: string
   version: string
-  validate(
-    input: PolicyAdapterInput,
-  ): readonly TViolation[] | Promise<readonly TViolation[]>
+  validate(input: PolicyAdapterInput): readonly TViolation[] | Promise<readonly TViolation[]>
   isBlocking(violation: TViolation): boolean
 }): PolicyAdapter {
   return {
@@ -37,11 +31,11 @@ export function createPolicyAdapter<TViolation extends SourcePolicyViolation>(op
   }
 }
 
-/** Politique explicite d'attente : une absence d'oracle fait échouer le seuil de conformité. */
+/** Une absence explicite d'oracle fait échouer le seuil de conformité. */
 export function createUnavailablePolicyAdapter(reason: string): PolicyAdapter {
   return {
-    id: 'issue-1-policy-adapter/pending',
-    version: 'issue-1/pending',
+    id: 'unavailable-policy-adapter',
+    version: 'unavailable',
     evaluate(): PolicyEvaluation {
       return { status: 'unavailable', reason, violations: [] }
     },
@@ -49,5 +43,5 @@ export function createUnavailablePolicyAdapter(reason: string): PolicyAdapter {
 }
 
 export const unavailablePolicyAdapter = createUnavailablePolicyAdapter(
-  "Le validateur de l'issue #1 n'est pas encore disponible sur la branche de base.",
+  "Le validateur de politique n'est pas disponible.",
 )

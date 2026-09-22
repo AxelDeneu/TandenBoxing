@@ -71,9 +71,11 @@ a déjà choisi.
 `applySkillGuidanceToPrescription` effectue le raccord final sans dépendance vers le module de #2 :
 il conserve toutes les décisions du planner, borne `maxNewTechniques` à zéro ou un, applique le
 plafond d'intensité d'une demande adaptée et ajoute `skillSelection` (nouveauté, consolidations,
-prérequis et faits de `coachNote`). Après intégration de #2, son service doit appeler cet adaptateur
+prérequis et faits de `coachNote`). Le service de prescription de production appelle cet adaptateur
 sur la prescription déjà calculée ; aucun profil de blocs ni choix de catégorie n'est dupliqué ici.
 
 Le service `getSkillProgression` adapte les repositories existants au moteur pur. Le snapshot est
 exposé par `GET /api/skills/progression` et injecté dans le contexte de génération sous
-`progressionCompetences`.
+`progressionCompetences`. Le même contexte persiste aussi `prescription.skillSelection` : les états
+`acquis` et `en_consolidation` restent explicables dans le snapshot, tandis que `newSkillId`
+identifie sans ambiguïté la compétence nouvellement introduite pour cette séance.

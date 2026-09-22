@@ -20,6 +20,18 @@ const adjustLoading = ref(false)
 const deleteLoading = ref(false)
 const busyKey = ref<string | null>(null)
 
+const dialogs = {
+  regenerate: showRegen,
+  adjust: showAdjust,
+  reschedule: showReschedule,
+  deleteSession: showDelete,
+  custom: showCustom,
+} as const
+
+function setDialog(dialog: keyof typeof dialogs, visible: boolean): void {
+  dialogs[dialog].value = visible
+}
+
 const adjustInstruction = ref('')
 const ADJUST_SUGGESTIONS = [
   'Plus court aujourd’hui',
@@ -135,6 +147,10 @@ async function deleteSession() {
 /** Séance sur mesure lancée : la génération tourne en fond, le polling l'affichera. */
 async function customDone() {
   showCustom.value = false
+  await refresh()
+}
+
+async function rescheduleDone(): Promise<void> {
   await refresh()
 }
 
@@ -401,7 +417,7 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
           variant="soft"
           icon="i-lucide-wand-sparkles"
           :disabled="!data.hasApiKey"
-          @click="showCustom = true"
+          @click="setDialog('custom', true)"
         >
           Séance sur mesure
         </UButton>
@@ -432,7 +448,9 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
     >
       <template #footer>
         <div class="flex w-full justify-end gap-2">
-          <UButton color="neutral" variant="ghost" @click="showRegen = false">Annuler</UButton>
+          <UButton color="neutral" variant="ghost" @click="setDialog('regenerate', false)">
+            Annuler
+          </UButton>
           <UButton
             color="primary"
             icon="i-lucide-refresh-cw"
@@ -474,7 +492,9 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
       </template>
       <template #footer>
         <div class="flex w-full justify-end gap-2">
-          <UButton color="neutral" variant="ghost" @click="showAdjust = false">Annuler</UButton>
+          <UButton color="neutral" variant="ghost" @click="setDialog('adjust', false)">
+            Annuler
+          </UButton>
           <UButton
             color="primary"
             icon="i-lucide-wand-sparkles"
@@ -492,7 +512,7 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
       v-if="session"
       v-model:open="showReschedule"
       :date="session.date"
-      @done="refresh"
+      @done="rescheduleDone"
     />
 
     <UModal
@@ -502,7 +522,9 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
     >
       <template #footer>
         <div class="flex w-full justify-end gap-2">
-          <UButton color="neutral" variant="ghost" @click="showDelete = false">Annuler</UButton>
+          <UButton color="neutral" variant="ghost" @click="setDialog('deleteSession', false)">
+            Annuler
+          </UButton>
           <UButton
             color="error"
             icon="i-lucide-trash-2"

@@ -4,7 +4,9 @@
  * Lance la génération en arrière-plan et répond immédiatement.
  */
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ date?: string; regenerate?: boolean }>(event).catch(() => ({}))
+  const body = await readBody<{ date?: string; regenerate?: boolean }>(event).catch(
+    (): { date?: string; regenerate?: boolean } => ({}),
+  )
 
   const { anthropicApiKey } = useRuntimeConfig()
   if (!anthropicApiKey) {

@@ -119,6 +119,7 @@ ${CURRICULUM_GUIDE}
 - Pour CHAQUE exercice, renseigne "skillIds" avec uniquement les identifiants ci-dessus réellement travaillés. Utilise [] pour un exercice physique, cardio ou de mobilité sans apprentissage technique ciblé.
 - Le contexte contient "progressionCompetences", calculé à partir des séances terminées et de leurs feedbacks. Utilise ses états, ses nouveautés éligibles et ses prérequis manquants ; ne déduis jamais la maîtrise du seul nombre de séances.
 - Sans demande explicite, n'introduis aucune compétence absente de "eligibleNewSkillIds" et respecte "prescription.maxNewTechniques".
+- "prescription.skillSelection" est la sélection finale : introduis uniquement "newSkillId", consolide "consolidatedSkillIds", respecte les prérequis manquants et la pédagogie prescrite.
 - Une demande explicite peut viser une compétence non acquise ou bloquée : conserve la cible, mais réduis l'intensité, décompose le geste et consolide ses prérequis au lieu de simuler un acquis.
 - Renvoie TOUJOURS "category" ET "focus".
 
@@ -331,7 +332,8 @@ export function buildGenerationContext(date: string): {
 
   // La prescription partage la même source pour les générations directes et différées.
   const plan = getPlan(date)
-  const prescription = buildWorkoutPrescription(date)
+  const progressionCompetences = getSkillProgression(date)
+  const prescription = buildWorkoutPrescription(date, {}, progressionCompetences)
   const dureeCibleMin = prescription.targetSeconds / 60
 
   const allCompleted = listCompletedSessions()
@@ -420,7 +422,7 @@ export function buildGenerationContext(date: string): {
     poids,
     prescription,
     memoire,
-    progressionCompetences: getSkillProgression(date),
+    progressionCompetences,
     historique,
   }
 
@@ -476,10 +478,14 @@ export async function generateSessionForDate(
       focusLibre: context.demande?.focusLibre ?? null,
       note: context.demande?.note ?? null,
     }
-    context.prescription = buildWorkoutPrescription(date, {
-      category: existing.category,
-      focus: existing.focus,
-    })
+    context.prescription = buildWorkoutPrescription(
+      date,
+      {
+        category: existing.category,
+        focus: existing.focus,
+      },
+      context.progressionCompetences,
+    )
   }
   const demande = context.demande
 

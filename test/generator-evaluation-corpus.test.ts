@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { SYNTHETIC_CORPUS } from '../evaluation/fixtures/corpus'
 import { candidateRun } from '../evaluation/fixtures/reference-candidate'
+import { GENERATOR_VERSIONS } from '../shared/generator-version'
 import { workoutSessionSchema } from '../shared/session-schema'
 
 describe('corpus synthétique du générateur', () => {
@@ -43,6 +44,14 @@ describe('corpus synthétique du générateur', () => {
     for (const item of SYNTHETIC_CORPUS.cases) {
       expect(workoutSessionSchema.safeParse(candidateRun.outputs[item.id]).success).toBe(true)
     }
+  })
+
+  it('attribue le candidat à la politique active sans version en attente', () => {
+    expect(candidateRun.versions).toEqual(GENERATOR_VERSIONS)
+    expect(GENERATOR_VERSIONS.policy).toBe('session-policy/v1')
+    expect(Object.values(GENERATOR_VERSIONS).some((version) => version.includes('pending'))).toBe(
+      false,
+    )
   })
 
   it('ne dépend ni de la base locale, ni de secrets, ni du client Anthropic', async () => {

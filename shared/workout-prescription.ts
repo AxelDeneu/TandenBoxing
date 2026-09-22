@@ -10,6 +10,7 @@ import {
   type WorkoutFocus,
 } from './session-schema'
 import type { WorkoutVarietyConstraints } from './session-variety'
+import type { SkillAwarePrescription } from './skill-mastery'
 
 /** Budget en secondes pour chaque type de bloc générable. Une valeur nulle interdit le bloc. */
 export const blockBudgetsSchema = z.object({
@@ -49,8 +50,8 @@ export const workoutPrescriptionSchema = z.object({
 
 export type BlockBudgets = z.infer<typeof blockBudgetsSchema>
 export type WorkoutPrescription = z.infer<typeof workoutPrescriptionSchema>
-/** Prescription enrichie à la frontière serveur par la mémoire pure de l'issue #3. */
-export type VarietyAwareWorkoutPrescription = WorkoutPrescription & {
+/** Prescription de production enrichie par la maîtrise (#4) et la mémoire de variété (#3). */
+export type VarietyAwareWorkoutPrescription = SkillAwarePrescription<WorkoutPrescription> & {
   variety: WorkoutVarietyConstraints
 }
 

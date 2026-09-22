@@ -34,7 +34,7 @@ const form = reactive({
 
 const profileForm = reactive({
   level: profileData.value?.level ?? 'debutant',
-  fitnessLevel: profileData.value?.fitnessLevel ?? null,
+  fitnessLevel: profileData.value?.fitnessLevel ?? undefined,
   age: profileData.value?.age ?? null,
   constraints: profileData.value?.constraints ?? '',
 })
@@ -49,7 +49,7 @@ async function save() {
         method: 'PUT',
         body: {
           level: profileForm.level,
-          fitnessLevel: profileForm.fitnessLevel,
+          fitnessLevel: profileForm.fitnessLevel ?? null,
           age: profileForm.age,
           constraints: profileForm.constraints || null,
         },
