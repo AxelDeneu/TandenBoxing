@@ -6,12 +6,14 @@
  * `generationContext` et reprises par le banc d'évaluation.
  */
 import { SESSION_POLICY_VERSION } from './session-policy'
+import { EXERCISE_PREFERENCE_VERSION } from './exercise-preferences'
 
 export const GENERATOR_VERSIONS = {
-  planner: 'generation-service/v2',
+  planner: 'generation-service/v3',
   policy: SESSION_POLICY_VERSION,
-  prompt: 'session-system-prompt/v2',
+  prompt: 'session-system-prompt/v3',
   outputContract: 'workout-session-schema/v1',
+  preferences: EXERCISE_PREFERENCE_VERSION,
 } as const
 
 export type GeneratorVersions = {
@@ -19,4 +21,5 @@ export type GeneratorVersions = {
   readonly policy: string
   readonly prompt: string
   readonly outputContract: string
+  readonly preferences: string
 }

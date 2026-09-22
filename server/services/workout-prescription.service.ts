@@ -94,6 +94,7 @@ export function buildWorkoutPrescription(
   const varietyMemory = buildVarietyMemory(
     completed.map((session) => ({ date: session.date, structure: session.structure })),
   )
+  const exercisePreferences = getExercisePreferenceConstraints(date)
   const consolidation: ConsolidationIntent | undefined =
     prescription.category === 'renforcement'
       ? {
@@ -105,5 +106,6 @@ export function buildWorkoutPrescription(
   return {
     ...skillAwarePrescription,
     variety: buildWorkoutVarietyConstraints(varietyMemory, consolidation),
+    exercisePreferences,
   }
 }

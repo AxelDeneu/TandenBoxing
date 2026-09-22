@@ -56,7 +56,7 @@ politique absente est un échec, pas un succès silencieux.
 
 Le banc ne recopie aucune règle métier. `evaluation/adapters/session-policy.ts` appelle
 directement `validateSessionPolicy` et convertit uniquement ses violations au format du rapport.
-La version `session-policy/v1` est partagée avec les versions persistées dans
+La version `session-policy/v2` est partagée avec les versions persistées dans
 `generationContext`. Un autre adaptateur compatible peut être sélectionné explicitement :
 
 ```bash

@@ -4,6 +4,7 @@ import {
   type WorkoutFocus,
   type WorkoutSession,
 } from '../../shared/session-schema'
+import type { PreferenceAction, PreferenceReasonCode } from '../../shared/exercise-preferences'
 import type { NewExerciseFeedback, Session, SessionPlan } from '../database/schema'
 
 function loadSessionOrThrow(date: string): Session {
@@ -130,6 +131,7 @@ export function removeExerciseFromSession(
   date: string,
   blockIndex: number,
   exerciseIndex: number,
+  reasonCode?: PreferenceReasonCode | null,
 ): Session {
   const row = loadSessionOrThrow(date)
   const structure = structuredClone(row.structure)
@@ -147,7 +149,11 @@ export function removeExerciseFromSession(
       statusMessage: 'Impossible de retirer le dernier exercice de la séance.',
     })
   }
-  return persistStructure(date, structure)
+  const updated = persistStructure(date, structure)
+  recordSessionExercisePreference(row, blockIndex, exerciseIndex, 'removed', reasonCode, {
+    source: 'session_edit',
+  })
+  return updated
 }
 
 /** Remplace un exercice par une alternative générée par l'IA. */
@@ -155,7 +161,7 @@ export async function replaceExerciseInSession(
   date: string,
   blockIndex: number,
   exerciseIndex: number,
-  reason?: string,
+  reasonCode?: PreferenceReasonCode | null,
 ): Promise<Session> {
   const row = loadSessionOrThrow(date)
   const structure = structuredClone(row.structure)
@@ -164,14 +170,30 @@ export async function replaceExerciseInSession(
   if (!block || !current) {
     throw createError({ statusCode: 400, statusMessage: 'Exercice introuvable.' })
   }
-  block.exercises[exerciseIndex] = await generateReplacementExercise(
+  const pendingPreference = previewSessionExercisePreference(
+    row,
+    blockIndex,
+    exerciseIndex,
+    'replaced',
+    reasonCode,
+    { source: 'session_edit' },
+  )
+  const preferences = getExercisePreferenceConstraints(date, pendingPreference)
+  const replacement = await generateReplacementExercise(
     structure,
     blockIndex,
     exerciseIndex,
-    reason,
+    reasonCode,
+    preferences,
     row.aiModel,
   )
-  return persistStructure(date, structure)
+  block.exercises[exerciseIndex] = replacement
+  const updated = persistStructure(date, structure)
+  recordSessionExercisePreference(row, blockIndex, exerciseIndex, 'replaced', reasonCode, {
+    source: 'session_edit',
+    replacement,
+  })
+  return updated
 }
 
 export interface FeedbackPayload {
@@ -188,6 +210,8 @@ export interface FeedbackPayload {
     exerciseName: string
     difficulty: number | null
     comment: string | null
+    preferenceAction: Extract<PreferenceAction, 'liked' | 'disliked'> | null
+    preferenceReasonCode: PreferenceReasonCode | null
   }[]
 }
 
@@ -242,6 +266,21 @@ export function submitFeedback(date: string, payload: FeedbackPayload): Session 
     comment: e.comment,
   }))
   replaceExerciseFeedback(row.id, feedbackRows)
+
+  for (const exercise of payload.exercises) {
+    if (!exercise.preferenceAction) continue
+    recordSessionExercisePreference(
+      row,
+      exercise.blockIndex,
+      exercise.exerciseIndex,
+      exercise.preferenceAction,
+      exercise.preferenceReasonCode,
+      {
+        source: 'feedback',
+        sourceKey: `feedback:${row.id}:${exercise.blockIndex}:${exercise.exerciseIndex}`,
+      },
+    )
+  }
 
   // L'historique vient de changer : les recommandations en cache sont périmées.
   if (payload.completed) clearRecommendationCache()

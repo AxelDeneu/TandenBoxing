@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  PREFERENCE_REASON_OPTIONS,
+  type PreferenceReasonCode,
+} from '~~/shared/exercise-preferences'
 import type { SessionCategory, TodayResponse } from '~/utils/session'
 
 useHead({ title: "Aujourd'hui" })
@@ -15,10 +19,18 @@ const showAdjust = ref(false)
 const showReschedule = ref(false)
 const showDelete = ref(false)
 const showCustom = ref(false)
+const showSwapReason = ref(false)
 const regenLoading = ref(false)
 const adjustLoading = ref(false)
 const deleteLoading = ref(false)
 const busyKey = ref<string | null>(null)
+const pendingSwap = ref<{
+  blockIndex: number
+  exerciseIndex: number
+  action: 'replace' | 'remove'
+} | null>(null)
+const swapReasonCode = ref<PreferenceReasonCode | undefined>()
+const swapReasonOptions = PREFERENCE_REASON_OPTIONS.map(({ value, label }) => ({ value, label }))
 
 const dialogs = {
   regenerate: showRegen,
@@ -160,8 +172,11 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
   try {
     await $fetch(`/api/sessions/${session.value.date}/swap-exercise`, {
       method: 'POST',
-      body: { blockIndex, exerciseIndex, action },
+      body: { blockIndex, exerciseIndex, action, reasonCode: swapReasonCode.value ?? null },
     })
+    showSwapReason.value = false
+    pendingSwap.value = null
+    swapReasonCode.value = undefined
     await refresh()
     toast.add({
       title: action === 'remove' ? 'Exercice retiré' : 'Exercice remplacé',
@@ -173,6 +188,25 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
   } finally {
     busyKey.value = null
   }
+}
+
+function requestSwap(blockIndex: number, exerciseIndex: number, action: 'replace' | 'remove') {
+  pendingSwap.value = { blockIndex, exerciseIndex, action }
+  swapReasonCode.value = undefined
+  showSwapReason.value = true
+}
+
+async function confirmSwap() {
+  if (!pendingSwap.value) return
+  await swap(
+    pendingSwap.value.blockIndex,
+    pendingSwap.value.exerciseIndex,
+    pendingSwap.value.action,
+  )
+}
+
+function closeSwapDialog(): void {
+  showSwapReason.value = false
 }
 </script>
 
@@ -306,8 +340,8 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
             :block-index="bi"
             :editable="session.status !== 'completed'"
             :busy-key="busyKey"
-            @replace="(ei) => swap(bi, ei, 'replace')"
-            @remove="(ei) => swap(bi, ei, 'remove')"
+            @replace="(ei) => requestSwap(bi, ei, 'replace')"
+            @remove="(ei) => requestSwap(bi, ei, 'remove')"
           />
         </div>
 
@@ -440,6 +474,40 @@ async function swap(blockIndex: number, exerciseIndex: number, action: 'replace'
         <PlanSessionForm v-if="data" :date="data.date" generate-only @done="customDone" />
       </template>
     </USlideover>
+
+    <UModal
+      v-model:open="showSwapReason"
+      :title="
+        pendingSwap?.action === 'remove' ? 'Retirer cet exercice ?' : 'Remplacer cet exercice ?'
+      "
+      description="Le motif est optionnel. S’il est renseigné, il aidera les prochaines séances."
+    >
+      <template #body>
+        <USelect
+          v-model="swapReasonCode"
+          :items="swapReasonOptions"
+          placeholder="Motif (optionnel)"
+          class="w-full"
+        />
+        <p class="mt-2 text-xs text-muted">
+          Douleur, matériel indisponible et mouvement impossible créent une exclusion stricte. Les
+          autres motifs restent des préférences souples.
+        </p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" @click="closeSwapDialog"> Annuler </UButton>
+          <UButton
+            :color="pendingSwap?.action === 'remove' ? 'error' : 'primary'"
+            :icon="pendingSwap?.action === 'remove' ? 'i-lucide-trash-2' : 'i-lucide-refresh-cw'"
+            :loading="busyKey !== null"
+            @click="confirmSwap"
+          >
+            {{ pendingSwap?.action === 'remove' ? 'Retirer' : 'Remplacer' }}
+          </UButton>
+        </div>
+      </template>
+    </UModal>
 
     <UModal
       v-model:open="showRegen"

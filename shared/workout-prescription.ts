@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { daysBetween } from './dates'
+import type { ExercisePreferenceConstraints } from './exercise-preferences'
 import { detectFatigue, recommendFocuses, type RecoHistoryEntry } from './recommendations'
 import {
   blockType,
@@ -53,6 +54,7 @@ export type WorkoutPrescription = z.infer<typeof workoutPrescriptionSchema>
 /** Prescription de production enrichie par la maîtrise (#4) et la mémoire de variété (#3). */
 export type VarietyAwareWorkoutPrescription = SkillAwarePrescription<WorkoutPrescription> & {
   variety: WorkoutVarietyConstraints
+  exercisePreferences: ExercisePreferenceConstraints
 }
 
 export interface WorkoutPrescriptionRequest {

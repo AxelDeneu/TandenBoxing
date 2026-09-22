@@ -1,5 +1,13 @@
 import { sql } from 'drizzle-orm'
-import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import type {
+  PreferenceAction,
+  PreferenceEventContext,
+  PreferenceEventSource,
+  PreferenceReasonCode,
+  PreferenceScope,
+  PreferenceSignalKind,
+} from '../../shared/exercise-preferences'
 import type { WorkoutSession } from '../../shared/session-schema'
 
 const timestamps = {
@@ -144,6 +152,37 @@ export const exerciseFeedback = sqliteTable('exercise_feedback', {
 })
 
 /**
+ * Journal des corrections explicites par exercice. Les motifs et le contexte sont bornés :
+ * aucun commentaire libre ni donnée de santé détaillée n'est recopié dans ce journal.
+ */
+export const exercisePreferenceEvents = sqliteTable(
+  'exercise_preference_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    exerciseKey: text('exercise_key').notNull(),
+    exerciseName: text('exercise_name').notNull(),
+    movementFamily: text('movement_family').notNull(),
+    modality: text('modality').notNull(),
+    action: text('action').$type<PreferenceAction>().notNull(),
+    reasonCode: text('reason_code').$type<PreferenceReasonCode>().notNull(),
+    signalKind: text('signal_kind').$type<PreferenceSignalKind>().notNull(),
+    scope: text('scope').$type<PreferenceScope>().notNull(),
+    scopeKey: text('scope_key').notNull(),
+    occurredOn: text('occurred_on').notNull(),
+    source: text('source').$type<PreferenceEventSource>().notNull(),
+    /** Clé idempotente pour un feedback réenregistré ; null pour les actions ponctuelles. */
+    sourceKey: text('source_key'),
+    context: text('context', { mode: 'json' }).$type<PreferenceEventContext>().notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('exercise_preference_events_source_key_unique').on(table.sourceKey),
+    index('exercise_preference_events_exercise_key_idx').on(table.exerciseKey),
+    index('exercise_preference_events_occurred_on_idx').on(table.occurredOn),
+  ],
+)
+
+/**
  * Intention de planification d'une séance (une par date), découplée de la séance générée.
  * Permet de planifier à l'avance une catégorie + un focus : la séance complète est générée
  * le jour J (ou à la demande) en tenant compte de cette intention.
@@ -224,6 +263,8 @@ export type SessionFeedback = typeof sessionFeedback.$inferSelect
 export type NewSessionFeedback = typeof sessionFeedback.$inferInsert
 export type ExerciseFeedback = typeof exerciseFeedback.$inferSelect
 export type NewExerciseFeedback = typeof exerciseFeedback.$inferInsert
+export type ExercisePreferenceEventRow = typeof exercisePreferenceEvents.$inferSelect
+export type NewExercisePreferenceEventRow = typeof exercisePreferenceEvents.$inferInsert
 export type Weight = typeof weights.$inferSelect
 export type NewWeight = typeof weights.$inferInsert
 export type SessionPlan = typeof sessionPlans.$inferSelect

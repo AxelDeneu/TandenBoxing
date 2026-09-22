@@ -1,10 +1,21 @@
 <script setup lang="ts">
+import {
+  PREFERENCE_REASON_OPTIONS,
+  preferenceReasonLabel,
+  type ExercisePreferenceSummary,
+  type PreferenceReasonCode,
+} from '~~/shared/exercise-preferences'
+
 useHead({ title: 'Réglages' })
 
 const toast = useToast()
 
 const { data: settingsData } = await useFetch('/api/settings', { key: 'settings' })
 const { data: profileData } = await useFetch('/api/profile', { key: 'profile' })
+const { data: preferenceData, refresh: refreshPreferences } = await useFetch<{
+  asOfDate: string
+  preferences: ExercisePreferenceSummary[]
+}>('/api/preferences', { key: 'exercise-preferences' })
 
 const MODELS = [
   { label: 'Opus 4.8 — qualité max', value: 'claude-opus-4-8' },
@@ -22,6 +33,7 @@ const FITNESS = [
   { label: 'Actif', value: 'actif' },
   { label: 'Sportif', value: 'sportif' },
 ]
+const PREFERENCE_REASONS = PREFERENCE_REASON_OPTIONS.map(({ value, label }) => ({ value, label }))
 
 const form = reactive({
   trainingDays: [...(settingsData.value?.trainingDays ?? [1, 3, 5])],
@@ -40,6 +52,106 @@ const profileForm = reactive({
 })
 
 const saving = ref(false)
+const savingPreference = ref(false)
+const deletingPreference = ref(false)
+const editingPreference = ref<ExercisePreferenceSummary | null>(null)
+const preferenceToDelete = ref<ExercisePreferenceSummary | null>(null)
+const preferenceAction = ref<'liked' | 'disliked'>('liked')
+const preferenceReason = ref<PreferenceReasonCode | undefined>()
+
+function errorMessage(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const candidate = error as { data?: { statusMessage?: unknown }; message?: unknown }
+  if (typeof candidate.data?.statusMessage === 'string') return candidate.data.statusMessage
+  return typeof candidate.message === 'string' ? candidate.message : undefined
+}
+
+function editPreference(preference: ExercisePreferenceSummary) {
+  editingPreference.value = preference
+  preferenceAction.value =
+    preference.score > 0 && !preference.strictExclusion ? 'liked' : 'disliked'
+  preferenceReason.value =
+    preference.reasonCodes.find((reason) => reason !== 'liked') ?? 'no_reason'
+}
+
+function closePreferenceEditor(): void {
+  editingPreference.value = null
+}
+
+function requestPreferenceDeletion(preference: ExercisePreferenceSummary): void {
+  preferenceToDelete.value = preference
+}
+
+function closePreferenceDeletion(): void {
+  preferenceToDelete.value = null
+}
+
+function handlePreferenceEditorOpen(open: boolean): void {
+  if (!open) closePreferenceEditor()
+}
+
+function handlePreferenceDeletionOpen(open: boolean): void {
+  if (!open) closePreferenceDeletion()
+}
+
+async function savePreference() {
+  if (!editingPreference.value) return
+  savingPreference.value = true
+  try {
+    await $fetch(`/api/preferences/${encodeURIComponent(editingPreference.value.exerciseKey)}`, {
+      method: 'PUT',
+      body: {
+        action: preferenceAction.value,
+        reasonCode: preferenceAction.value === 'liked' ? 'liked' : (preferenceReason.value ?? null),
+      },
+    })
+    await refreshPreferences()
+    editingPreference.value = null
+    toast.add({
+      title: 'Préférence modifiée',
+      description: 'Les prochaines séances utiliseront ce nouveau signal.',
+      icon: 'i-lucide-check',
+      color: 'success',
+    })
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Échec',
+      description: errorMessage(error),
+      color: 'error',
+      icon: 'i-lucide-triangle-alert',
+    })
+  } finally {
+    savingPreference.value = false
+  }
+}
+
+async function deletePreference() {
+  if (!preferenceToDelete.value) return
+  deletingPreference.value = true
+  try {
+    await $fetch(`/api/preferences/${encodeURIComponent(preferenceToDelete.value.exerciseKey)}`, {
+      method: 'DELETE',
+    })
+    await refreshPreferences()
+    preferenceToDelete.value = null
+    toast.add({
+      title: 'Préférence effacée',
+      description: "L'exercice repart sans a priori appris.",
+      icon: 'i-lucide-eraser',
+      color: 'success',
+    })
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Échec',
+      description: errorMessage(error),
+      color: 'error',
+      icon: 'i-lucide-triangle-alert',
+    })
+  } finally {
+    deletingPreference.value = false
+  }
+}
+
 async function save() {
   saving.value = true
   try {
@@ -178,6 +290,72 @@ async function save() {
           </div>
         </div>
       </UCard>
+
+      <!-- Préférences apprises -->
+      <UCard class="lg:col-span-2">
+        <template #header>
+          <div>
+            <h2 class="flex items-center gap-2 font-semibold">
+              <UIcon name="i-lucide-brain" class="size-5 text-primary" /> Préférences d'exercice
+            </h2>
+            <p class="mt-1 text-xs text-muted">
+              Issues de tes avis, remplacements et retraits. Tu gardes toujours le dernier mot.
+            </p>
+          </div>
+        </template>
+
+        <div v-if="preferenceData?.preferences.length" class="divide-y divide-default">
+          <div
+            v-for="preference in preferenceData.preferences"
+            :key="preference.exerciseKey"
+            class="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center"
+          >
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <p class="truncate text-sm font-medium">{{ preference.exerciseName }}</p>
+                <UBadge v-if="preference.strictExclusion" color="error" variant="soft" size="sm">
+                  Exclusion stricte
+                </UBadge>
+                <UBadge
+                  v-else
+                  :color="preference.score > 0 ? 'success' : 'warning'"
+                  variant="soft"
+                  size="sm"
+                >
+                  {{ preference.score > 0 ? 'À favoriser' : 'À éviter' }}
+                </UBadge>
+              </div>
+              <p class="mt-1 text-xs text-muted">
+                {{ preference.eventCount }} {{ preference.eventCount > 1 ? 'signaux' : 'signal' }} ·
+                confiance {{ Math.round(preference.confidence * 100) }} % ·
+                {{ preference.reasonCodes.map(preferenceReasonLabel).join(', ') }}
+              </p>
+            </div>
+            <div class="flex shrink-0 gap-2">
+              <UButton
+                size="sm"
+                color="neutral"
+                variant="soft"
+                icon="i-lucide-pencil"
+                @click="editPreference(preference)"
+              >
+                Modifier
+              </UButton>
+              <UButton
+                size="sm"
+                color="error"
+                variant="ghost"
+                icon="i-lucide-trash-2"
+                aria-label="Effacer la préférence"
+                @click="requestPreferenceDeletion(preference)"
+              />
+            </div>
+          </div>
+        </div>
+        <div v-else class="py-4 text-center text-sm text-muted">
+          Aucune préférence apprise pour le moment.
+        </div>
+      </UCard>
     </div>
 
     <div class="lg:flex lg:justify-end">
@@ -217,5 +395,66 @@ async function save() {
         </div>
       </NuxtLink>
     </div>
+
+    <UModal
+      :open="editingPreference !== null"
+      title="Modifier la préférence"
+      :description="editingPreference?.exerciseName"
+      @update:open="handlePreferenceEditorOpen"
+    >
+      <template #body>
+        <div class="space-y-4">
+          <UFormField label="Préférence">
+            <USelect
+              v-model="preferenceAction"
+              :items="[
+                { label: 'À favoriser', value: 'liked' },
+                { label: 'À éviter', value: 'disliked' },
+              ]"
+              class="w-full"
+            />
+          </UFormField>
+          <UFormField v-if="preferenceAction === 'disliked'" label="Motif">
+            <USelect v-model="preferenceReason" :items="PREFERENCE_REASONS" class="w-full" />
+          </UFormField>
+          <p class="text-xs text-muted">
+            Enregistrer remplace les anciens signaux de cet exercice par ce choix explicite.
+          </p>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" @click="closePreferenceEditor">
+            Annuler
+          </UButton>
+          <UButton icon="i-lucide-save" :loading="savingPreference" @click="savePreference">
+            Enregistrer
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal
+      :open="preferenceToDelete !== null"
+      title="Effacer cette préférence ?"
+      :description="`Tous les signaux appris pour « ${preferenceToDelete?.exerciseName ?? ''} » seront supprimés.`"
+      @update:open="handlePreferenceDeletionOpen"
+    >
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" @click="closePreferenceDeletion">
+            Annuler
+          </UButton>
+          <UButton
+            color="error"
+            icon="i-lucide-trash-2"
+            :loading="deletingPreference"
+            @click="deletePreference"
+          >
+            Effacer
+          </UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

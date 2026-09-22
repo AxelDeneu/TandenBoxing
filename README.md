@@ -10,6 +10,8 @@ timer à intervalles avec audio, et suivi de progression.
 - **Structure complète** : échauffement → technique (combos numérotés) → cardio → retour au calme.
 - **Timer à intervalles** plein écran : bips + cloche de round, anneau de progression, hors-ligne.
 - **Feedback détaillé** par exercice → l'IA ajuste les séances suivantes.
+- **Préférences apprises** : avis, remplacements et retraits pondèrent les choix futurs ; les
+  motifs de douleur, d'impossibilité ou de matériel créent des exclusions strictes modifiables.
 - **Suivi** : historique, séries, temps cumulé, courbes de difficulté/énergie, poids.
 - **PWA installable** sur mobile.
 

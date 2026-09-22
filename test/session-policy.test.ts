@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  buildExercisePreferenceConstraints,
+  exercisePreferenceIdentity,
+  preferenceTarget,
+  type PreferenceReasonCode,
+} from '../shared/exercise-preferences'
+import {
   GeneratedSessionValidationError,
   resolveGeneratedSession,
   type GenerationValidationAttempt,
@@ -73,6 +79,27 @@ function makeSession(
 }
 
 const DEFAULT_REQUEST: SessionPolicyRequest = { targetDurationMin: 10 }
+
+function preferencesFor(name: string, reasonCode: PreferenceReasonCode) {
+  const identity = exercisePreferenceIdentity({ name, category: 'cardio' }, 'cardio')
+  const target = preferenceTarget(identity, reasonCode)
+  return buildExercisePreferenceConstraints(
+    [
+      {
+        ...identity,
+        exerciseName: name,
+        action: reasonCode === 'liked' ? ('liked' as const) : ('disliked' as const),
+        reasonCode,
+        signalKind: target.kind,
+        scope: target.scope,
+        scopeKey: target.scopeKey,
+        occurredOn: '2026-09-17',
+        source: 'feedback' as const,
+      },
+    ],
+    '2026-09-18',
+  )
+}
 
 function violationCodes(session: WorkoutSession, request = DEFAULT_REQUEST): string[] {
   return validateSessionPolicy(session, request).violations.map((violation) => violation.code)
@@ -236,6 +263,37 @@ describe('validateSessionPolicy — profils de catégorie', () => {
         'CATEGORY_PROFILE_MISMATCH',
       ]),
     )
+  })
+})
+
+describe('validateSessionPolicy — préférences et règles obligatoires', () => {
+  it('rejette un exercice couvert par une exclusion stricte', () => {
+    const session = makeSession()
+    session.blocks[2]!.exercises[0]!.name = 'Burpees contrôlés'
+
+    expect(
+      violationCodes(session, {
+        ...DEFAULT_REQUEST,
+        exercisePreferences: preferencesFor('Burpees contrôlés', 'pain'),
+      }),
+    ).toContain('STRICT_EXERCISE_EXCLUSION')
+  })
+
+  it('ne relâche pas la sécurité d’une récupération pour une préférence positive', () => {
+    const session = makeSession('recuperation', [
+      makeBlock('echauffement', 60, 'mobilite'),
+      makeBlock('cardio', 480, 'cardio'),
+      makeBlock('retour_au_calme', 60, 'recuperation'),
+    ])
+    session.blocks[1]!.exercises[0]!.name = 'Burpees contrôlés'
+
+    const codes = violationCodes(session, {
+      ...DEFAULT_REQUEST,
+      exercisePreferences: preferencesFor('Burpees contrôlés', 'liked'),
+    })
+
+    expect(codes).toContain('RECOVERY_HIGH_INTENSITY')
+    expect(codes).not.toContain('STRICT_EXERCISE_EXCLUSION')
   })
 })
 

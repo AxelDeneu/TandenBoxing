@@ -874,6 +874,10 @@ export interface ExerciseSelectionCandidate<T> {
   lastPerformedDate?: string | null
   recentUseCount?: number
   signature?: ExerciseSignature
+  /** Score appris [-1, 1], appliqué seulement après les prérequis et la pertinence. */
+  preferenceScore?: number
+  /** Exclusion non négociable (douleur, impossibilité ou matériel indisponible). */
+  strictlyExcluded?: boolean
 }
 
 export interface RankedExerciseCandidate<T> extends ExerciseSelectionCandidate<T> {
@@ -900,10 +904,11 @@ export function rankExerciseCandidates<T>(
   today: string,
 ): RankedExerciseCandidate<T>[] {
   return candidates
-    .filter((candidate) => candidate.prerequisitesMet)
+    .filter((candidate) => candidate.prerequisitesMet && !candidate.strictlyExcluded)
     .map((candidate) => {
       const relevanceScore = clamp01(candidate.focusRelevance)
       const masteryScore = clamp01(candidate.masteryFit)
+      const preferenceScore = clamp01(((candidate.preferenceScore ?? 0) + 1) / 2)
       const recencyNoveltyScore = recencyNovelty(
         today,
         candidate.lastPerformedDate,
@@ -914,7 +919,12 @@ export function rankExerciseCandidates<T>(
         relevanceScore: rounded(relevanceScore),
         masteryScore: rounded(masteryScore),
         recencyNoveltyScore: rounded(recencyNoveltyScore),
-        score: rounded(relevanceScore * 0.55 + masteryScore * 0.25 + recencyNoveltyScore * 0.2),
+        score: rounded(
+          relevanceScore * 0.5 +
+            masteryScore * 0.25 +
+            recencyNoveltyScore * 0.15 +
+            preferenceScore * 0.1,
+        ),
       }
     })
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))

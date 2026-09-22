@@ -1,6 +1,14 @@
 import type AnthropicSDK from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { BEGINNER_CURRICULUM } from '../../shared/curriculum'
+import {
+  matchingStrictExclusion,
+  preferenceReasonLabel,
+  tracePreferenceInfluence,
+  type ExercisePreferenceConstraints,
+  type PreferenceInfluenceTrace,
+  type PreferenceReasonCode,
+} from '../../shared/exercise-preferences'
 import { GENERATOR_VERSIONS, type GeneratorVersions } from '../../shared/generator-version'
 import { buildSessionPrompt } from '../../shared/generation-prompt'
 import {
@@ -133,6 +141,11 @@ Le contexte fournit "memoire" : par focus et par catégorie déjà pratiqués, l
 - L'échauffement et le retour au calme ont leurs propres budgets : choisis de préférence les premières routines sûres proposées dans "memoire.variete.safeRoutineSuggestions", sans sacrifier la sécurité à la nouveauté.
 - Le contexte peut contenir "seancesSautees" (séances récemment non faites, avec la raison éventuelle) : tiens-en compte — reprise en douceur après une coupure, et allègement si la raison évoque une fatigue ou une blessure.
 
+PRÉFÉRENCES D'EXERCICE
+- "prescription.exercisePreferences.strictExclusions" contient les exclusions obligatoires apprises à partir de motifs structurés. Ne propose aucun exercice dont le mouvement, la modalité ou la signature correspond à leur portée.
+- "prescription.exercisePreferences.weightedPreferences" contient des préférences souples avec score, récence implicite, fréquence et confiance. Favorise un score positif et pénalise un score négatif uniquement après avoir respecté sécurité, matériel, focus, prérequis, progression, budgets et variété.
+- Une préférence positive ne justifie jamais une compétence bloquée, une intensité inadaptée ou une répétition hors budget. En cas de conflit, les règles de sécurité et de progression gagnent toujours.
+
 NOTATION DES COMBOS (boxe anglaise)
 1 = jab (bras avant) · 2 = cross / direct arrière · 3 = crochet avant · 4 = crochet arrière · 5 = uppercut avant · 6 = uppercut arrière.
 Pour chaque exercice TECHNIQUE au sac, fournis le combo en notation chiffrée (champ "combo", ex : "1-2", "1-1-2", "1-2-3-2") ET son décodage en clair (champ "comboExplanation"). Pour les exercices sans combo (échauffement, gainage, étirements), mets "combo" et "comboExplanation" à null.
@@ -256,6 +269,8 @@ export interface GenerationContext {
   evaluationVariete?: VarietyAssessment
   /** Contrat pur de #4, directement consommable par le planner de prescription de #2. */
   progressionCompetences: SkillProgressionSnapshot
+  /** Résultat borné de l'application des préférences, sans commentaire libre. */
+  preferenceInfluence?: PreferenceInfluenceTrace
   historique: HistoryEntry[]
   /** Séances récemment sautées, avec raison : signal de coaching (reprise en douceur, fatigue…). */
   seancesSautees?: SkippedEntry[]
@@ -539,6 +554,7 @@ export async function generateSessionForDate(
         requestedCategory: requestedCategory.success ? requestedCategory.data : null,
         requestedFocus: requestedFocus.success ? requestedFocus.data : null,
         hasCustomFocus: Boolean(demande?.focusLibre),
+        exercisePreferences: context.prescription.exercisePreferences,
       },
       onInvalid: (attempt, violations) => logGenerationViolations(date, attempt, violations),
       correct: async (candidate, violations) => {
@@ -557,6 +573,10 @@ export async function generateSessionForDate(
           `Violations structurées :`,
           '```json',
           JSON.stringify(violations, null, 2),
+          '```',
+          `Exclusions strictes d'exercice à respecter :`,
+          '```json',
+          JSON.stringify(context.prescription.exercisePreferences.strictExclusions, null, 2),
           '```',
           `Séance candidate :`,
           '```json',
@@ -620,6 +640,10 @@ export async function generateSessionForDate(
   context.evaluationVariete = assessSessionVariety(session, context.memoire.variete.sessions, {
     consolidation,
   })
+  context.preferenceInfluence = tracePreferenceInfluence(
+    session,
+    context.prescription.exercisePreferences,
+  )
   const values: NewSession = {
     date,
     status: 'generated',
@@ -646,7 +670,8 @@ export async function generateReplacementExercise(
   structure: WorkoutSession,
   blockIndex: number,
   exerciseIndex: number,
-  reason: string | undefined,
+  reasonCode: PreferenceReasonCode | null | undefined,
+  preferences: ExercisePreferenceConstraints,
   model: string,
 ): Promise<Exercise> {
   const block = structure.blocks[blockIndex]!
@@ -659,8 +684,14 @@ export async function generateReplacementExercise(
     '```',
     ``,
     `Propose UN exercice de remplacement pour « ${current.name} » (bloc « ${block.title} », catégorie ${current.category}).`,
-    reason ? `Raison du remplacement : ${reason}.` : `Je souhaite simplement une alternative.`,
-    `Contraintes : reste cohérent avec le bloc et le même type d'effort, garde une durée d'intervalles similaire, respecte le matériel (sac de frappe et poids du corps uniquement) et le niveau débutant. Évite un exercice déjà présent dans la séance. Renseigne ses skillIds stables ; conserve la cible pédagogique de l'exercice remplacé sauf si la raison demande de la changer.`,
+    reasonCode && reasonCode !== 'no_reason'
+      ? `Motif structuré du remplacement : ${preferenceReasonLabel(reasonCode)}.`
+      : `Je souhaite simplement une alternative.`,
+    `Préférences d'exercice actives (JSON borné, sans commentaire libre) :`,
+    '```json',
+    JSON.stringify(preferences, null, 2),
+    '```',
+    `Contraintes : reste cohérent avec le bloc et le même type d'effort, garde une durée d'intervalles similaire, respecte le matériel (sac de frappe et poids du corps uniquement) et le niveau débutant. Respecte toutes les exclusions strictes. Les préférences pondérées viennent après la sécurité, les prérequis, la progression et la variété. Évite un exercice déjà présent dans la séance. Renseigne ses skillIds stables ; conserve la cible pédagogique de l'exercice remplacé sauf si le motif demande de la changer.`,
     `Appelle l'outil "proposer_exercice".`,
   ].join('\n')
 
@@ -702,7 +733,14 @@ export async function generateReplacementExercise(
       statusMessage: "L'exercice proposé est invalide. Réessaie.",
     })
   }
-  return tagExerciseWithSkills(parsed.data)
+  const replacement = tagExerciseWithSkills(parsed.data)
+  if (matchingStrictExclusion(replacement, block.type, preferences)) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: "L'alternative proposée ne respecte pas une exclusion stricte. Réessaie.",
+    })
+  }
+  return replacement
 }
 
 /**
