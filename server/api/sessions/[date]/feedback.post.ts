@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { preferenceReasonCode } from '../../../../shared/exercise-preferences'
 
 const schema = z.object({
   completed: z.boolean().default(true),
@@ -16,6 +17,8 @@ const schema = z.object({
         exerciseName: z.string(),
         difficulty: z.number().int().min(1).max(5).nullable().default(null),
         comment: z.string().max(1000).nullable().default(null),
+        preferenceAction: z.enum(['liked', 'disliked']).nullable().default(null),
+        preferenceReasonCode: preferenceReasonCode.nullable().default(null),
       }),
     )
     .default([]),

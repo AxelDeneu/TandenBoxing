@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  PREFERENCE_REASON_OPTIONS,
+  type PreferenceReasonCode,
+} from '~~/shared/exercise-preferences'
 import type { ApiSession } from '~/utils/session'
 
 useHead({ title: 'Noter la séance' })
@@ -20,6 +24,10 @@ const SORENESS_ZONES = [
   'Poignets',
   'Aucune',
 ]
+const preferenceReasonOptions = PREFERENCE_REASON_OPTIONS.map(({ value, label }) => ({
+  value,
+  label,
+}))
 
 /** Durée mesurée par le timer (`?duree=` en secondes) — absente si la séance a été notée à la main. */
 const timedSeconds = Number(route.query.duree)
@@ -42,9 +50,19 @@ const exercises = ref(
       exerciseIndex: ei,
       name: e.name,
       difficulty: null as number | null,
+      preferenceAction: null as 'liked' | 'disliked' | null,
+      preferenceReasonCode: undefined as PreferenceReasonCode | undefined,
     })),
   ),
 )
+
+function setExercisePreference(
+  exercise: (typeof exercises.value)[number],
+  action: 'liked' | 'disliked',
+) {
+  exercise.preferenceAction = exercise.preferenceAction === action ? null : action
+  if (exercise.preferenceAction !== 'disliked') exercise.preferenceReasonCode = undefined
+}
 
 function toggleSoreness(zone: string) {
   if (zone === 'Aucune') {
@@ -76,6 +94,8 @@ async function submit() {
           exerciseIndex: e.exerciseIndex,
           exerciseName: e.name,
           difficulty: e.difficulty,
+          preferenceAction: e.preferenceAction,
+          preferenceReasonCode: e.preferenceReasonCode ?? null,
         })),
       },
     })
@@ -174,6 +194,36 @@ async function submit() {
           <div v-for="(ex, i) in exercises" :key="i" class="rounded-xl border border-default p-3">
             <p class="mb-2 text-sm font-medium">{{ ex.name }}</p>
             <RatingScale v-model="ex.difficulty" />
+            <div class="mt-3 border-t border-default pt-3">
+              <p class="mb-2 text-xs text-muted">Souhaites-tu revoir cet exercice ?</p>
+              <div class="flex gap-2">
+                <UButton
+                  size="sm"
+                  icon="i-lucide-thumbs-up"
+                  :color="ex.preferenceAction === 'liked' ? 'success' : 'neutral'"
+                  :variant="ex.preferenceAction === 'liked' ? 'soft' : 'ghost'"
+                  @click="setExercisePreference(ex, 'liked')"
+                >
+                  Apprécié
+                </UButton>
+                <UButton
+                  size="sm"
+                  icon="i-lucide-thumbs-down"
+                  :color="ex.preferenceAction === 'disliked' ? 'warning' : 'neutral'"
+                  :variant="ex.preferenceAction === 'disliked' ? 'soft' : 'ghost'"
+                  @click="setExercisePreference(ex, 'disliked')"
+                >
+                  Peu apprécié
+                </UButton>
+              </div>
+              <USelect
+                v-if="ex.preferenceAction === 'disliked'"
+                v-model="ex.preferenceReasonCode"
+                :items="preferenceReasonOptions"
+                placeholder="Motif (optionnel)"
+                class="mt-2 w-full"
+              />
+            </div>
           </div>
         </div>
       </section>

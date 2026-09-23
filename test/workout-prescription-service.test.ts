@@ -28,6 +28,13 @@ beforeEach(() => {
   vi.stubGlobal('listCompletedSessions', () => [])
   vi.stubGlobal('listRecentSessions', () => [])
   vi.stubGlobal('listSessionFeedbackByIds', () => [])
+  vi.stubGlobal('getExercisePreferenceConstraints', (asOfDate: string) => ({
+    version: 'exercise-preferences/v1',
+    asOfDate,
+    signalCount: 0,
+    strictExclusions: [],
+    weightedPreferences: [],
+  }))
 })
 
 afterEach(() => {
@@ -118,5 +125,51 @@ describe('buildWorkoutPrescription — intégration de la maîtrise', () => {
     expect(prompt).toContain('"state": "acquis"')
     expect(prompt).toContain('"state": "en_consolidation"')
     expect(prompt).toContain('"newSkillId": "appuis"')
+  })
+
+  it('ajoute les préférences sans modifier la sélection pédagogique ni les budgets', () => {
+    vi.stubGlobal('getExercisePreferenceConstraints', () => ({
+      version: 'exercise-preferences/v1',
+      asOfDate: DATE,
+      signalCount: 2,
+      strictExclusions: [
+        {
+          exerciseKey: 'burpees:poids_du_corps',
+          exerciseName: 'Burpees',
+          scope: 'movement',
+          scopeKey: 'burpees',
+          reasonCodes: ['pain'],
+        },
+      ],
+      weightedPreferences: [
+        {
+          exerciseKey: 'jab:sac',
+          exerciseName: 'Jab au sac',
+          direction: 'prefer',
+          score: 0.7,
+          recency: 0.9,
+          frequency: 0.8,
+          confidence: 0.7,
+          eventCount: 3,
+          lastEventOn: '2026-09-21',
+          reasonCodes: ['liked'],
+        },
+      ],
+    }))
+    const progression = buildSkillProgression(DATE, [])
+
+    const prescription = buildWorkoutPrescription(DATE, {}, progression)
+    const prompt = buildSessionPrompt({
+      dateLabel: 'mardi 22 septembre 2026',
+      context: { dureeCibleMin: 30, prescription, progressionCompetences: progression },
+    })
+
+    expect(prescription.exercisePreferences.signalCount).toBe(2)
+    expect(prescription.skillSelection.newSkillId).toBe('posture_garde')
+    expect(Object.values(prescription.blockBudgets).reduce((sum, value) => sum + value, 0)).toBe(
+      1_800,
+    )
+    expect(prompt).toContain("Exclusions strictes d'exercices : 1")
+    expect(prompt).toContain('exercices également sûrs, compatibles avec le focus, les prérequis')
   })
 })

@@ -5,8 +5,9 @@ import {
   type WorkoutFocus,
   type WorkoutSession,
 } from './session-schema'
+import { matchingStrictExclusion, type ExercisePreferenceConstraints } from './exercise-preferences'
 
-export const SESSION_POLICY_VERSION = 'session-policy/v1'
+export const SESSION_POLICY_VERSION = 'session-policy/v2'
 
 /** Une séance générée doit remplir au moins 90 % de la durée demandée. */
 export const MIN_TARGET_DURATION_RATIO = 0.9
@@ -19,6 +20,7 @@ export type SessionPolicyViolationCode =
   | 'CATEGORY_MISMATCH'
   | 'FOCUS_MISMATCH'
   | 'INVALID_COMBO_NOTATION'
+  | 'STRICT_EXERCISE_EXCLUSION'
   | 'RECOVERY_HIGH_INTENSITY'
   | 'CATEGORY_PROFILE_MISMATCH'
 
@@ -35,6 +37,8 @@ export interface SessionPolicyRequest {
   requestedFocus?: WorkoutFocus | null
   /** Un thème libre doit être mappé par l'IA vers l'enum, pas comparé à requestedFocus. */
   hasCustomFocus?: boolean
+  /** Seules les exclusions strictes sont bloquantes ; les scores pondérés restent consultatifs. */
+  exercisePreferences?: ExercisePreferenceConstraints
 }
 
 export interface SessionPolicyResult {
@@ -210,6 +214,19 @@ export function validateSessionPolicy(
 
   session.blocks.forEach((block, blockIndex) => {
     block.exercises.forEach((exercise, exerciseIndex) => {
+      const strictExclusion = matchingStrictExclusion(
+        exercise,
+        block.type,
+        request.exercisePreferences,
+      )
+      if (strictExclusion) {
+        violations.push({
+          code: 'STRICT_EXERCISE_EXCLUSION',
+          path: `blocks.${blockIndex}.exercises.${exerciseIndex}`,
+          // La portée suffit au diagnostic ; aucun motif de santé ou nom libre n'est journalisé.
+          details: { scope: strictExclusion.scope },
+        })
+      }
       if (exercise.combo !== null && !COMBO_PATTERN.test(exercise.combo)) {
         violations.push({
           code: 'INVALID_COMBO_NOTATION',

@@ -1,3 +1,4 @@
+import type { ExercisePreferenceConstraints } from './exercise-preferences'
 import type { WorkoutPrescription } from './workout-prescription'
 import type { WorkoutVarietyConstraints } from './session-variety'
 import type { PrescriptionSkillSelection, SkillProgressionSnapshot } from './skill-mastery'
@@ -15,6 +16,7 @@ export interface GenerationPromptContext {
   prescription: WorkoutPrescription & {
     skillSelection?: PrescriptionSkillSelection
     variety?: WorkoutVarietyConstraints
+    exercisePreferences?: ExercisePreferenceConstraints
   }
   demande?: GenerationPromptRequest
   progressionCompetences?: SkillProgressionSnapshot
@@ -74,6 +76,13 @@ export function buildSessionPrompt(input: SessionPromptInput): string {
                 `- Consolidation intentionnelle autorisée : ${prescription.variety.consolidation.reason}`,
               ]
             : []),
+        ]
+      : []),
+    ...(prescription.exercisePreferences
+      ? [
+          `- Exclusions strictes d'exercices : ${prescription.exercisePreferences.strictExclusions.length}. Elles sont obligatoires.`,
+          `- Préférences pondérées actives : ${prescription.exercisePreferences.weightedPreferences.length}. Utilise leur score et leur confiance uniquement entre exercices également sûrs, compatibles avec le focus, les prérequis, la progression et la variété.`,
+          `- Une préférence pondérée ne doit jamais modifier la catégorie, le focus, l'intensité, les budgets, la sélection de compétences ou les règles de sécurité.`,
         ]
       : []),
     `- Un type de bloc doté d'un budget de 0 seconde ne doit pas être généré.`,

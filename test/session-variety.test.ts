@@ -260,6 +260,49 @@ describe('sélection d’exercices', () => {
     expect(selected[0]!.recencyNoveltyScore).toBeGreaterThan(selected[1]!.recencyNoveltyScore)
     expect(selected.some(({ id }) => id === 'prerequis-manquant')).toBe(false)
   })
+
+  it('applique une préférence seulement entre candidats autorisés', () => {
+    const selected = selectExerciseCandidates(
+      [
+        {
+          id: 'neutre',
+          exercise: 'Jab au sac',
+          focusRelevance: 0.9,
+          prerequisitesMet: true,
+          masteryFit: 0.9,
+          preferenceScore: 0,
+        },
+        {
+          id: 'prefere',
+          exercise: 'Directs en shadow',
+          focusRelevance: 0.9,
+          prerequisitesMet: true,
+          masteryFit: 0.9,
+          preferenceScore: 1,
+        },
+        {
+          id: 'bloque-malgre-preference',
+          exercise: 'Combo avancé',
+          focusRelevance: 1,
+          prerequisitesMet: false,
+          masteryFit: 1,
+          preferenceScore: 1,
+        },
+        {
+          id: 'exclu-strictement',
+          exercise: 'Burpees',
+          focusRelevance: 1,
+          prerequisitesMet: true,
+          masteryFit: 1,
+          preferenceScore: 1,
+          strictlyExcluded: true,
+        },
+      ],
+      { today: '2026-09-18', limit: 4 },
+    )
+
+    expect(selected.map(({ id }) => id)).toEqual(['prefere', 'neutre'])
+  })
 })
 
 describe('compatibilité des anciennes séances', () => {
