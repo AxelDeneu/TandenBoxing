@@ -9,5 +9,7 @@ export default defineEventHandler((event) => {
     ...row,
     feedback: findSessionFeedback(row.id) ?? null,
     exerciseFeedback: listExerciseFeedbackBySession(row.id),
+    checkIn: findSessionCheckIn(row.id) ?? null,
+    adaptations: listSessionAdaptations(row.id),
   }
 })

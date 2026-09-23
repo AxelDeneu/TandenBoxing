@@ -43,6 +43,13 @@
       "when": 1790112321200,
       "tag": "0005_misty_fallen_one",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790167833570,
+      "tag": "0006_naive_iron_lad",
+      "breakpoints": true
     }
   ]
 }

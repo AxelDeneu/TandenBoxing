@@ -22,6 +22,14 @@ export default defineEventHandler(async (event) => {
       ? body.date
       : todayIso(getSettings().timezone)
 
+  if (body?.regenerate && findSessionByDate(date)?.status === 'in_progress') {
+    throw createError({
+      statusCode: 409,
+      statusMessage:
+        'Une séance démarrée ne peut être régénérée. Utilise les actions du timer pour adapter uniquement la suite.',
+    })
+  }
+
   // Demande explicite : lève le marqueur « volontairement vide » posé par une suppression/report.
   undismissDate(date)
 

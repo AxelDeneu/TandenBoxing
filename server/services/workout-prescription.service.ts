@@ -55,11 +55,16 @@ export function buildWorkoutPrescription(
   const rawFocus = overrides.focus !== undefined ? overrides.focus : sessionPlan?.focus
   const parsedCategory = sessionCategory.safeParse(rawCategory)
   const parsedFocus = workoutFocus.safeParse(rawFocus)
+  const recentAdaptations = listSessionAdaptationsBefore(date).map((adaptation) => ({
+    date: adaptation.sessionDate,
+    cause: adaptation.cause,
+  }))
 
   const prescription = planWorkoutPrescription({
     today: date,
     targetDurationMin: settingsRow.targetDurationMin,
     constraints: profileRow.constraints,
+    recentAdaptations,
     history: completed.map((session) => {
       const feedback = feedbackBySessionId.get(session.id)
       return {

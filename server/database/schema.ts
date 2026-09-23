@@ -8,6 +8,14 @@ import type {
   PreferenceScope,
   PreferenceSignalKind,
 } from '../../shared/exercise-preferences'
+import type {
+  BodyArea,
+  SessionAdaptationCause,
+  SessionAdaptationChange,
+  SessionAdaptationCursor,
+  SessionAutoregulationConstraints,
+  SessionIntention,
+} from '../../shared/session-autoregulation'
 import type { WorkoutSession } from '../../shared/session-schema'
 
 const timestamps = {
@@ -182,6 +190,59 @@ export const exercisePreferenceEvents = sqliteTable(
   ],
 )
 
+/** Check-in facultatif et structuré effectué juste avant une séance. */
+export const sessionCheckIns = sqliteTable('session_check_ins', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sessionId: integer('session_id')
+    .notNull()
+    .unique()
+    .references(() => sessions.id, { onDelete: 'cascade' }),
+  availableTimeMin: integer('available_time_min'),
+  energy: integer('energy').notNull().default(3),
+  sorenessLevel: integer('soreness_level').notNull().default(0),
+  sorenessLocations: text('soreness_locations', { mode: 'json' })
+    .$type<BodyArea[]>()
+    .notNull()
+    .default(sql`'[]'`),
+  painLocations: text('pain_locations', { mode: 'json' })
+    .$type<BodyArea[]>()
+    .notNull()
+    .default(sql`'[]'`),
+  intention: text('intention').$type<SessionIntention>().notNull().default('maintain'),
+  ...timestamps,
+})
+
+/** Journal append-only des décisions d'autorégulation avant et pendant l'effort. */
+export const sessionAdaptations = sqliteTable(
+  'session_adaptations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    sessionId: integer('session_id')
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'cascade' }),
+    sessionDate: text('session_date').notNull(),
+    cause: text('cause').$type<SessionAdaptationCause>().notNull(),
+    cursor: text('cursor', { mode: 'json' }).$type<SessionAdaptationCursor | null>(),
+    constraints: text('constraints', { mode: 'json' })
+      .$type<SessionAutoregulationConstraints>()
+      .notNull(),
+    changes: text('changes', { mode: 'json' }).$type<SessionAdaptationChange[]>().notNull(),
+    beforeDurationSec: integer('before_duration_sec').notNull(),
+    afterDurationSec: integer('after_duration_sec').notNull(),
+    beforeIntensity: integer('before_intensity').notNull(),
+    afterIntensity: integer('after_intensity').notNull(),
+    ruleVersion: text('rule_version').notNull(),
+    safetyNoticeShown: integer('safety_notice_shown', { mode: 'boolean' }).notNull().default(false),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (table) => [
+    index('session_adaptations_session_id_idx').on(table.sessionId),
+    index('session_adaptations_session_date_idx').on(table.sessionDate),
+  ],
+)
+
 /**
  * Intention de planification d'une séance (une par date), découplée de la séance générée.
  * Permet de planifier à l'avance une catégorie + un focus : la séance complète est générée
@@ -265,6 +326,10 @@ export type ExerciseFeedback = typeof exerciseFeedback.$inferSelect
 export type NewExerciseFeedback = typeof exerciseFeedback.$inferInsert
 export type ExercisePreferenceEventRow = typeof exercisePreferenceEvents.$inferSelect
 export type NewExercisePreferenceEventRow = typeof exercisePreferenceEvents.$inferInsert
+export type SessionCheckInRow = typeof sessionCheckIns.$inferSelect
+export type NewSessionCheckInRow = typeof sessionCheckIns.$inferInsert
+export type SessionAdaptationRow = typeof sessionAdaptations.$inferSelect
+export type NewSessionAdaptationRow = typeof sessionAdaptations.$inferInsert
 export type Weight = typeof weights.$inferSelect
 export type NewWeight = typeof weights.$inferInsert
 export type SessionPlan = typeof sessionPlans.$inferSelect

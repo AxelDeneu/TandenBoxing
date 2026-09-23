@@ -479,6 +479,13 @@ export async function generateSessionForDate(
 ): Promise<Session> {
   const existing = findSessionByDate(date)
   const adjustment = options.adjustment?.trim()
+  if (existing?.status === 'in_progress' && (options.regenerate || adjustment)) {
+    throw createError({
+      statusCode: 409,
+      statusMessage:
+        'Une séance démarrée ne peut être régénérée. Utilise les actions du timer pour adapter uniquement la suite.',
+    })
+  }
   // Un ajustement régénère toujours ; sinon, une séance existante est renvoyée telle quelle.
   if (existing && !options.regenerate && !adjustment) return existing
 

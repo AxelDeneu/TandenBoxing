@@ -12,6 +12,8 @@ timer à intervalles avec audio, et suivi de progression.
 - **Feedback détaillé** par exercice → l'IA ajuste les séances suivantes.
 - **Préférences apprises** : avis, remplacements et retraits pondèrent les choix futurs ; les
   motifs de douleur, d'impossibilité ou de matériel créent des exclusions strictes modifiables.
+- **Autorégulation déterministe** : check-in facultatif avant le chrono, puis commandes
+  `trop difficile`, `trop facile` et `douleur` qui n'adaptent que la partie restante.
 - **Suivi** : historique, séries, temps cumulé, courbes de difficulté/énergie, poids.
 - **PWA installable** sur mobile.
 
@@ -80,6 +82,12 @@ Les profils déterministes sont les suivants :
 La somme des budgets en secondes est toujours égale à la durée cible. La fatigue, une reprise
 après interruption ou une contrainte explicite réduisent l'intensité et interdisent les nouvelles
 techniques, sans écraser les choix explicites de catégorie, focus ou durée.
+
+Avant le démarrage, le check-in structure le temps disponible, l'énergie, les courbatures, une
+éventuelle douleur localisée et l'intention du jour. Les règles versionnées recalculent localement
+durée, intensité, repos, volume, complexité et mouvements autorisés. Pendant l'effort, le curseur
+du timer protège les exercices terminés ; une douleur arrête le mouvement courant, exclut sa
+famille via le journal de préférences et affiche une consigne de prudence sans diagnostic.
 
 ## Déploiement
 

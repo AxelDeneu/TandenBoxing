@@ -1,7 +1,12 @@
 <script setup lang="ts">
+import { BODY_AREA_OPTIONS, type BodyArea } from '~~/shared/session-autoregulation'
 import type { WorkoutSession } from '~/utils/session'
 
-const props = defineProps<{ session: WorkoutSession; date: string }>()
+const props = defineProps<{
+  session: WorkoutSession
+  date: string
+  initialSafetyNotice?: string | null
+}>()
 
 const {
   phases,
@@ -21,17 +26,33 @@ const {
   restoreSnapshot,
   discardSnapshot,
   toggle,
+  pause,
   skip,
   prev,
   stop,
   reset,
   start,
+  applyAdaptedSession,
 } = useWorkoutTimer(props.session, props.date)
 
 const CIRC = 2 * Math.PI * 100
 
 // Sur mobile le guide est escamoté dans un slideover ; sur desktop il est toujours visible.
 const guideOpen = ref(false)
+const painOpen = ref(false)
+const painLocations = ref<BodyArea[]>([])
+const adaptingAction = ref<'too_hard' | 'too_easy' | 'pain' | null>(null)
+const safetyNotice = ref(props.initialSafetyNotice ?? null)
+const safetyOpen = ref(Boolean(props.initialSafetyNotice))
+const toast = useToast()
+
+function errorMessage(error: unknown): string {
+  if (!error || typeof error !== 'object') return 'Erreur inconnue'
+  const candidate = error as { data?: { statusMessage?: unknown }; message?: unknown }
+  if (typeof candidate.data?.statusMessage === 'string') return candidate.data.statusMessage
+  if (typeof candidate.message === 'string') return candidate.message
+  return 'Erreur inconnue'
+}
 
 function openGuide(): void {
   guideOpen.value = true
@@ -98,6 +119,73 @@ function exit() {
 function restart() {
   reset()
   start()
+}
+
+function togglePainLocation(location: BodyArea): void {
+  const index = painLocations.value.indexOf(location)
+  if (index >= 0) painLocations.value.splice(index, 1)
+  else painLocations.value.push(location)
+}
+
+async function adapt(action: 'too_hard' | 'too_easy' | 'pain'): Promise<void> {
+  const phase = current.value
+  if (!phase || adaptingAction.value) return
+  pause()
+  adaptingAction.value = action
+  try {
+    const result = await $fetch<{
+      session: { structure: WorkoutSession }
+      adaptation: { changes: unknown[] }
+      safetyNotice: string | null
+    }>(`/api/sessions/${props.date}/adapt`, {
+      method: 'POST',
+      body: {
+        action,
+        cursor: { blockIndex: phase.blockIndex, exerciseIndex: phase.exerciseIndex },
+        painLocations: action === 'pain' ? painLocations.value : [],
+      },
+    })
+    applyAdaptedSession(result.session.structure, action === 'pain')
+    painOpen.value = false
+    painLocations.value = []
+    if (result.safetyNotice) {
+      safetyNotice.value = result.safetyNotice
+      safetyOpen.value = true
+    }
+    toast.add({
+      title:
+        action === 'too_hard'
+          ? 'Suite allégée'
+          : action === 'too_easy'
+            ? 'Suite intensifiée'
+            : 'Mouvements incompatibles retirés',
+      description: `${result.adaptation.changes.length} changement(s) appliqué(s) à la suite uniquement.`,
+      color: action === 'pain' ? 'warning' : 'success',
+      icon: action === 'pain' ? 'i-lucide-shield-alert' : 'i-lucide-check',
+    })
+  } catch (error: unknown) {
+    toast.add({
+      title: "L'adaptation a échoué",
+      description: errorMessage(error),
+      color: 'error',
+      icon: 'i-lucide-triangle-alert',
+    })
+  } finally {
+    adaptingAction.value = null
+  }
+}
+
+function requestPainAdaptation(): void {
+  pause()
+  painOpen.value = true
+}
+
+function closePainDialog(): void {
+  painOpen.value = false
+}
+
+function acknowledgeSafetyNotice(): void {
+  safetyOpen.value = false
 }
 </script>
 
@@ -237,6 +325,47 @@ function restart() {
       </div>
     </div>
 
+    <!-- Autorégulation structurée : seule la suite est modifiée. -->
+    <div v-if="!finished" class="px-4 pt-2">
+      <div class="mx-auto grid max-w-md grid-cols-3 gap-2">
+        <UButton
+          block
+          size="sm"
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-trending-down"
+          :loading="adaptingAction === 'too_hard'"
+          :disabled="adaptingAction !== null"
+          @click="adapt('too_hard')"
+        >
+          Trop difficile
+        </UButton>
+        <UButton
+          block
+          size="sm"
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-trending-up"
+          :loading="adaptingAction === 'too_easy'"
+          :disabled="adaptingAction !== null"
+          @click="adapt('too_easy')"
+        >
+          Trop facile
+        </UButton>
+        <UButton
+          block
+          size="sm"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-shield-alert"
+          :disabled="adaptingAction !== null"
+          @click="requestPainAdaptation"
+        >
+          Douleur
+        </UButton>
+      </div>
+    </div>
+
     <!-- Contrôles -->
     <div v-if="!finished" class="flex items-center justify-center gap-8 p-6 pb-10">
       <UButton
@@ -308,6 +437,63 @@ function restart() {
           <UButton color="neutral" variant="ghost" @click="continueSession"> Continuer </UButton>
           <UButton color="primary" icon="i-lucide-log-out" @click="exit">Quitter</UButton>
         </div>
+      </template>
+    </UModal>
+
+    <UModal
+      v-model:open="painOpen"
+      title="Où ressens-tu la douleur ?"
+      description="Le mouvement courant sera arrêté et les mouvements incompatibles seront retirés uniquement de la suite."
+    >
+      <template #body>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="area in BODY_AREA_OPTIONS"
+            :key="area.value"
+            type="button"
+            class="rounded-full border px-3 py-1.5 text-sm"
+            :class="
+              painLocations.includes(area.value)
+                ? 'border-error bg-error/15 text-error'
+                : 'border-default text-muted'
+            "
+            @click="togglePainLocation(area.value)"
+          >
+            {{ area.label }}
+          </button>
+        </div>
+        <p class="mt-3 text-xs text-amber-300">
+          Arrête le mouvement douloureux. Cette action adapte la séance mais ne fournit aucun
+          diagnostic médical.
+        </p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" @click="closePainDialog">Annuler</UButton>
+          <UButton
+            color="warning"
+            icon="i-lucide-shield-alert"
+            :loading="adaptingAction === 'pain'"
+            :disabled="painLocations.length === 0"
+            @click="adapt('pain')"
+          >
+            Adapter la suite
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal
+      v-model:open="safetyOpen"
+      :dismissible="false"
+      :close="false"
+      title="Consigne de prudence"
+      :description="safetyNotice ?? undefined"
+    >
+      <template #footer>
+        <UButton block color="warning" icon="i-lucide-check" @click="acknowledgeSafetyNotice">
+          J’ai compris
+        </UButton>
       </template>
     </UModal>
 
