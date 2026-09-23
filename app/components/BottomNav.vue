@@ -3,6 +3,7 @@ const route = useRoute()
 
 const items = [
   { label: "Aujourd'hui", icon: 'i-lucide-dumbbell', to: '/' },
+  { label: 'Parcours', icon: 'i-lucide-route', to: '/progression' },
   { label: 'Planning', icon: 'i-lucide-calendar-days', to: '/planning' },
   { label: 'Historique', icon: 'i-lucide-history', to: '/historique' },
   { label: 'Stats', icon: 'i-lucide-chart-line', to: '/stats' },
@@ -19,12 +20,13 @@ function isActive(to: string) {
   <nav
     class="fixed inset-x-0 bottom-0 z-40 border-t border-default bg-default/85 backdrop-blur-lg lg:hidden"
   >
-    <div class="mx-auto grid max-w-lg grid-cols-5">
+    <div class="mx-auto grid max-w-lg grid-cols-6">
       <NuxtLink
         v-for="item in items"
         :key="item.to"
         :to="item.to"
-        class="flex flex-col items-center gap-1 px-1 py-2.5 text-[11px] font-medium transition-colors"
+        :aria-current="isActive(item.to) ? 'page' : undefined"
+        class="flex min-w-0 flex-col items-center gap-1 px-0.5 py-2.5 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary sm:text-[11px]"
         :class="isActive(item.to) ? 'text-primary' : 'text-muted hover:text-default'"
       >
         <UIcon :name="item.icon" class="size-5" />

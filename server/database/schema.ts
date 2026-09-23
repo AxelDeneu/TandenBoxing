@@ -258,6 +258,8 @@ export const sessionPlans = sqliteTable('session_plans', {
   category: text('category'),
   /** Focus (thème) voulu ; null = laissé au choix de l'IA. */
   focus: text('focus'),
+  /** Compétence suggérée au planner ; le moteur peut l'accepter, l'adapter ou la reporter. */
+  requestedSkillId: text('requested_skill_id'),
   /** Thème libre d'une séance sur mesure (ex : « pectoraux », « biceps ») ; prime sur `focus`. */
   customFocus: text('custom_focus'),
   /** Durée voulue pour CETTE séance (minutes) ; null = durée cible des réglages. */

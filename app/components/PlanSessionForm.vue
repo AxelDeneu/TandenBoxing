@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { CATEGORY_OPTIONS, FOCUS_OPTIONS } from '~~/shared/recommendations'
+import type { SkillId } from '~~/shared/curriculum'
+import type { PrescriptionSkillSelection } from '~~/shared/skill-mastery'
 import type { FocusRecommendation, SessionCategory } from '~/utils/session'
 
 const props = defineProps<{
@@ -9,12 +11,15 @@ const props = defineProps<{
   initial?: {
     category?: string | null
     focus?: string | null
+    requestedSkillId?: SkillId | null
     customFocus?: string | null
     durationMin?: number | null
     note?: string | null
   }
   /** Séance unique : ne propose que « Générer maintenant » (pas de planification différée). */
   generateOnly?: boolean
+  /** Cible choisie depuis le parcours, appliquée tant qu'une intention existante ne la remplace pas. */
+  suggestedSkillId?: SkillId | null
 }>()
 
 const emit = defineEmits<{ done: [] }>()
@@ -24,6 +29,7 @@ const toast = useToast()
 /** Valeurs sentinelles : choix laissé à l'IA / thème libre saisi par l'utilisateur. */
 const AI_CHOICE = '__ia__'
 const FREE_FOCUS = '__libre__'
+const NO_TARGET = '__aucune__'
 
 const categoryItems = [
   { value: AI_CHOICE, label: "Au choix de l'IA", icon: 'i-lucide-sparkles' },
@@ -46,6 +52,9 @@ const DURATION_CHOICES = [15, 20, 30, 45, 60, 75, 90]
 const category = ref<string>(props.initial?.category ?? AI_CHOICE)
 const focus = ref<string>(
   props.initial?.customFocus ? FREE_FOCUS : (props.initial?.focus ?? AI_CHOICE),
+)
+const requestedSkillId = ref<string>(
+  props.initial?.requestedSkillId ?? props.suggestedSkillId ?? NO_TARGET,
 )
 const customFocus = ref<string>(props.initial?.customFocus ?? '')
 const duration = ref<number>(props.initial?.durationMin ?? 0)
@@ -77,6 +86,20 @@ const durationItems = computed(() => [
 // Recommandations IA — non bloquantes : en cas d'échec la section est simplement masquée.
 const recos = ref<FocusRecommendation[]>([])
 const recosLoading = ref(true)
+const progression = ref<SkillProgressionViewModel | null>(null)
+const progressionLoading = ref(true)
+const progressionError = ref(false)
+
+const skillTargetItems = computed(() => [
+  { value: NO_TARGET, label: 'Aucune cible particulière' },
+  ...(progression.value?.skills.map((skill) => ({
+    value: skill.id,
+    label: `${skill.label} — ${skill.stateLabel}`,
+  })) ?? []),
+])
+const targetedSkill = computed(() =>
+  progression.value?.skills.find((skill) => skill.id === requestedSkillId.value),
+)
 
 onMounted(async () => {
   $fetch<{ targetDurationMin: number }>('/api/settings')
@@ -90,6 +113,13 @@ onMounted(async () => {
     recos.value = []
   } finally {
     recosLoading.value = false
+  }
+  try {
+    progression.value = await loadSkillProgression((url) => $fetch(url), props.date)
+  } catch {
+    progressionError.value = true
+  } finally {
+    progressionLoading.value = false
   }
 })
 
@@ -109,12 +139,15 @@ const missingCustomFocus = computed(() => focus.value === FREE_FOCUS && !customF
 async function submit(generateNow: boolean) {
   loading.value = generateNow ? 'generate' : 'plan'
   try {
-    await $fetch('/api/sessions/plan', {
+    const result = await $fetch<{
+      skillSelection: PrescriptionSkillSelection | null
+    }>('/api/sessions/plan', {
       method: 'POST',
       body: {
         date: props.date,
         category: category.value === AI_CHOICE ? null : category.value,
         focus: (FOCUS_OPTIONS as string[]).includes(focus.value) ? focus.value : null,
+        requestedSkillId: requestedSkillId.value === NO_TARGET ? null : requestedSkillId.value,
         customFocus: focus.value === FREE_FOCUS ? customFocus.value.trim() || null : null,
         durationMin: duration.value || null,
         note: note.value.trim() || null,
@@ -125,13 +158,17 @@ async function submit(generateNow: boolean) {
       generateNow
         ? {
             title: 'Séance en préparation…',
-            description: `Ton coach IA compose la séance du ${formatDateFr(props.date)}.`,
+            description:
+              result.skillSelection?.coachNoteFacts.join(' ') ||
+              `Ton coach IA compose la séance du ${formatDateFr(props.date)}.`,
             icon: 'i-lucide-loader-circle',
             color: 'info',
           }
         : {
             title: 'Séance planifiée',
-            description: `Prévue le ${formatDateFr(props.date)}.`,
+            description:
+              result.skillSelection?.coachNoteFacts.join(' ') ||
+              `Prévue le ${formatDateFr(props.date)}.`,
             icon: 'i-lucide-calendar-check',
             color: 'success',
           },
@@ -202,6 +239,8 @@ async function submit(generateNow: boolean) {
       <UFormField label="Catégorie" :help="categoryHelp">
         <USelect
           v-model="category"
+          name="category"
+          autocomplete="off"
           :items="categoryItems"
           :icon="categoryMeta?.icon ?? 'i-lucide-sparkles'"
           class="w-full"
@@ -214,6 +253,8 @@ async function submit(generateNow: boolean) {
       >
         <USelect
           v-model="focus"
+          name="focus"
+          autocomplete="off"
           :items="focusItems"
           :icon="
             focus === AI_CHOICE
@@ -227,6 +268,35 @@ async function submit(generateNow: boolean) {
       </UFormField>
 
       <UFormField
+        label="Compétence cible"
+        hint="Optionnel"
+        :help="
+          targetedSkill?.targeting.explanation ??
+          'Tu suggères une cible ; le planner garde la décision finale selon les prérequis et la sécurité.'
+        "
+      >
+        <USkeleton v-if="progressionLoading" class="h-9 w-full rounded-lg" />
+        <USelect
+          v-else-if="progression"
+          v-model="requestedSkillId"
+          name="requestedSkillId"
+          autocomplete="off"
+          :items="skillTargetItems"
+          icon="i-lucide-route"
+          class="w-full"
+          aria-label="Compétence cible suggérée au planner"
+        />
+        <UAlert
+          v-else-if="progressionError"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-triangle-alert"
+          title="Cibles indisponibles"
+          description="Tu peux toujours planifier la séance sans cible particulière."
+        />
+      </UFormField>
+
+      <UFormField
         v-if="focus === FREE_FOCUS"
         label="Thème libre"
         required
@@ -234,19 +304,29 @@ async function submit(generateNow: boolean) {
       >
         <UInput
           v-model="customFocus"
-          autofocus
+          name="customFocus"
+          autocomplete="off"
           placeholder="Ex : pectoraux, biceps, explosivité…"
           class="w-full"
         />
       </UFormField>
 
       <UFormField label="Durée" help="Juste pour cette séance ; ne change pas tes réglages.">
-        <USelect v-model="duration" :items="durationItems" icon="i-lucide-clock" class="w-full" />
+        <USelect
+          v-model="duration"
+          name="durationMin"
+          autocomplete="off"
+          :items="durationItems"
+          icon="i-lucide-clock"
+          class="w-full"
+        />
       </UFormField>
 
       <UFormField label="Note pour le coach" hint="Optionnel">
         <UTextarea
           v-model="note"
+          name="coachNote"
+          autocomplete="off"
           :rows="2"
           autoresize
           placeholder="Ex : épaule sensible, envie de me défouler…"

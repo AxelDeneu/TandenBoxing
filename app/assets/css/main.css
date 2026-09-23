@@ -4,6 +4,7 @@
 /* Palette Tanden : sombre, énergique, orientée entraînement matinal. */
 :root {
   --ui-radius: 0.75rem;
+  color-scheme: dark;
 }
 
 html,
@@ -12,6 +13,25 @@ body {
   background: var(--ui-bg);
   color: var(--ui-text);
   -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Évite le zoom iOS sur les inputs et respecte les safe-areas mobiles. */

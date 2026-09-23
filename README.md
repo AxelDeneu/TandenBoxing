@@ -15,6 +15,8 @@ timer à intervalles avec audio, et suivi de progression.
 - **Autorégulation déterministe** : check-in facultatif avant le chrono, puis commandes
   `trop difficile`, `trop facile` et `douleur` qui n'adaptent que la partie restante.
 - **Suivi** : historique, séries, temps cumulé, courbes de difficulté/énergie, poids.
+- **Parcours technique** : compétences acquises, à consolider, éligibles ou bloquées, avec ciblage
+  pédagogique de la prochaine séance sous contrôle du planner.
 - **PWA installable** sur mobile.
 
 ## Stack

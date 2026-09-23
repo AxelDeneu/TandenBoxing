@@ -1,0 +1,1 @@
+ALTER TABLE `session_plans` ADD `requested_skill_id` text;

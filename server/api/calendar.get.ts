@@ -55,6 +55,7 @@ export default defineEventHandler((event) => {
             date: plan.date,
             category: plan.category,
             focus: plan.focus,
+            requestedSkillId: plan.requestedSkillId,
             customFocus: plan.customFocus,
             durationMin: plan.durationMin,
             note: plan.note,

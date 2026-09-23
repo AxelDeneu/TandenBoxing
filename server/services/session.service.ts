@@ -5,6 +5,7 @@ import {
   type WorkoutSession,
 } from '../../shared/session-schema'
 import type { PreferenceAction, PreferenceReasonCode } from '../../shared/exercise-preferences'
+import type { SkillId } from '../../shared/curriculum'
 import type { NewExerciseFeedback, Session, SessionPlan } from '../database/schema'
 
 function loadSessionOrThrow(date: string): Session {
@@ -33,6 +34,8 @@ export interface PlanPayload {
   /** Null = catégorie laissée au choix de l'IA. */
   category?: SessionCategory | null
   focus?: WorkoutFocus | null
+  /** Suggestion uniquement : le moteur conserve l'autorité sur l'éligibilité et la sécurité. */
+  requestedSkillId?: SkillId | null
   /** Thème libre d'une séance sur mesure (ex : « pectoraux ») ; prime sur `focus`. */
   customFocus?: string | null
   /** Durée voulue pour cette séance (minutes) ; null = durée cible des réglages. */
@@ -54,6 +57,7 @@ export function planSession(
     date,
     category: payload.category ?? null,
     focus: payload.focus ?? null,
+    requestedSkillId: payload.requestedSkillId ?? null,
     customFocus: payload.customFocus ?? null,
     durationMin: payload.durationMin ?? null,
     note: payload.note ?? null,
@@ -106,6 +110,7 @@ export function rescheduleSession(
         date: newDate,
         category: plan.category,
         focus: plan.focus,
+        requestedSkillId: plan.requestedSkillId,
         customFocus: plan.customFocus,
         durationMin: plan.durationMin,
         note: plan.note,

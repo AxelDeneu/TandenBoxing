@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { CalendarDay, SessionCategory } from '~/utils/session'
+import { getCurriculumSkill, isSkillId, type SkillId } from '~~/shared/curriculum'
 
-const props = defineProps<{ day: CalendarDay | null }>()
+const props = defineProps<{ day: CalendarDay | null; suggestedSkillId?: SkillId | null }>()
 const open = defineModel<boolean>('open', { default: false })
 const emit = defineEmits<{ changed: [] }>()
 
@@ -38,6 +39,10 @@ const category = computed(() => session.value?.category ?? plan.value?.category 
 const categoryMeta = computed(() =>
   category.value ? SESSION_CATEGORY_META[category.value as SessionCategory] : null,
 )
+const targetLabel = computed(() => {
+  const id = plan.value?.requestedSkillId
+  return isSkillId(id) ? getCurriculumSkill(id).label : null
+})
 
 const description = computed(() => {
   if (session.value) return 'Séance du jour'
@@ -98,6 +103,7 @@ async function generateFromPlan() {
         date: plan.value.date,
         category: plan.value.category,
         focus: plan.value.focus,
+        requestedSkillId: plan.value.requestedSkillId,
         customFocus: plan.value.customFocus,
         durationMin: plan.value.durationMin,
         note: plan.value.note,
@@ -287,6 +293,9 @@ async function deletePlan() {
               <UBadge v-if="plan.durationMin" color="neutral" variant="soft" icon="i-lucide-clock">
                 {{ plan.durationMin }} min
               </UBadge>
+              <UBadge v-if="targetLabel" color="primary" variant="outline" icon="i-lucide-route">
+                Cible : {{ targetLabel }}
+              </UBadge>
             </div>
 
             <p
@@ -357,6 +366,7 @@ async function deletePlan() {
             :key="`${date}-${editing}`"
             :date="date"
             :initial="editing && plan ? plan : undefined"
+            :suggested-skill-id="suggestedSkillId"
             @done="done"
           />
         </template>

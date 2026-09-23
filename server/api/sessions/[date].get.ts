@@ -7,6 +7,7 @@ export default defineEventHandler((event) => {
   }
   return {
     ...row,
+    pedagogicalIntent: buildSessionPedagogicalIntent(row),
     feedback: findSessionFeedback(row.id) ?? null,
     exerciseFeedback: listExerciseFeedbackBySession(row.id),
     checkIn: findSessionCheckIn(row.id) ?? null,
