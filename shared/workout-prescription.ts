@@ -46,6 +46,9 @@ export const workoutPrescriptionSchema = z.object({
     fatigued: z.boolean(),
     returningAfterBreak: z.boolean(),
     constrained: z.boolean(),
+    recentTooHard: z.boolean(),
+    recentPain: z.boolean(),
+    repeatedTooEasy: z.boolean(),
   }),
 })
 
@@ -78,6 +81,11 @@ export interface WorkoutPrescriptionInput {
   skipped?: PrescriptionSkippedEntry[]
   /** Contraintes connues du profil, sans interprétation par un modèle. */
   constraints?: string | null
+  /** Signaux structurés récents issus de l'autorégulation, antérieurs à `today`. */
+  recentAdaptations?: Array<{
+    date: string
+    cause: 'check_in' | 'too_hard' | 'too_easy' | 'pain'
+  }>
   request?: WorkoutPrescriptionRequest
 }
 
@@ -236,7 +244,14 @@ export function planWorkoutPrescription(input: WorkoutPrescriptionInput): Workou
   const request = input.request ?? {}
   const recommended = recommendFocuses({ today: input.today, history: input.history, limit: 1 })[0]!
   const completed = input.history.filter((entry) => entry.completed)
-  const fatigued = detectFatigue(input.today, completed).fatigued
+  const recentAdaptations = (input.recentAdaptations ?? []).filter(({ date }) => {
+    const age = daysBetween(date, input.today)
+    return age > 0 && age <= 14
+  })
+  const recentTooHard = recentAdaptations.some(({ cause }) => cause === 'too_hard')
+  const recentPain = recentAdaptations.some(({ cause }) => cause === 'pain')
+  const repeatedTooEasy = recentAdaptations.filter(({ cause }) => cause === 'too_easy').length >= 2
+  const fatigued = detectFatigue(input.today, completed).fatigued || recentTooHard
   const returningAfterBreak = isReturningAfterBreak(input)
   const constraintText = [
     input.constraints,
@@ -246,7 +261,7 @@ export function planWorkoutPrescription(input: WorkoutPrescriptionInput): Workou
     .filter((value): value is string => Boolean(value))
     .map(normalize)
     .join(' ')
-  const constrained = RECOVERY_CONSTRAINT.test(constraintText)
+  const constrained = RECOVERY_CONSTRAINT.test(constraintText) || recentPain
 
   const category = request.category ?? (constrained ? 'recuperation' : recommended.category)
   const mappedCustomFocus = focusForCustomRequest(request.customFocus)
@@ -264,7 +279,9 @@ export function planWorkoutPrescription(input: WorkoutPrescriptionInput): Workou
     ? 1
     : shouldReduceLoad
       ? Math.max(1, profile.intensity - 1)
-      : profile.intensity
+      : repeatedTooEasy
+        ? Math.min(5, profile.intensity + 1)
+        : profile.intensity
   const targetSeconds = targetDurationMin * 60
 
   return workoutPrescriptionSchema.parse({
@@ -279,6 +296,13 @@ export function planWorkoutPrescription(input: WorkoutPrescriptionInput): Workou
       focus: request.focus ? 'explicit' : mappedCustomFocus ? 'custom-focus' : 'recommendation',
       duration: request.durationMin != null ? 'explicit' : 'settings',
     },
-    signals: { fatigued, returningAfterBreak, constrained },
+    signals: {
+      fatigued,
+      returningAfterBreak,
+      constrained,
+      recentTooHard,
+      recentPain,
+      repeatedTooEasy,
+    },
   })
 }

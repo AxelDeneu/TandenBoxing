@@ -139,6 +139,36 @@ describe('planWorkoutPrescription — sélection', () => {
     expect(prescription.signals.constrained).toBe(true)
   })
 
+  it('réutilise les adaptations structurées dans les prescriptions futures', () => {
+    const prescription = planWorkoutPrescription(
+      input({
+        recentAdaptations: [
+          { date: '2026-09-17', cause: 'too_hard' },
+          { date: '2026-09-16', cause: 'pain' },
+        ],
+      }),
+    )
+    expect(prescription.signals.recentTooHard).toBe(true)
+    expect(prescription.signals.recentPain).toBe(true)
+    expect(prescription.signals.constrained).toBe(true)
+    expect(prescription.category).toBe('recuperation')
+    expect(prescription.intensity).toBe(1)
+  })
+
+  it('augmente dans les limites après deux signaux trop facile sans conflit de sécurité', () => {
+    const prescription = planWorkoutPrescription(
+      input({
+        request: { category: 'apprentissage' },
+        recentAdaptations: [
+          { date: '2026-09-17', cause: 'too_easy' },
+          { date: '2026-09-15', cause: 'too_easy' },
+        ],
+      }),
+    )
+    expect(prescription.signals.repeatedTooEasy).toBe(true)
+    expect(prescription.intensity).toBe(3)
+  })
+
   it('rapproche un thème libre connu sans déléguer ce choix au modèle', () => {
     const prescription = planWorkoutPrescription(
       input({ request: { customFocus: 'explosivité et pompes' } }),

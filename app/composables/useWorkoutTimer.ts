@@ -19,7 +19,11 @@ interface TimerSnapshot {
 
 export function useWorkoutTimer(session: WorkoutSession, date?: string) {
   const sound = createSoundPlayer()
-  const phases = buildTimerPhases(session)
+  // Les props Vue sont des proxies, que structuredClone refuse. Le contrat séance est 100 % JSON.
+  const cloneSession = (value: WorkoutSession): WorkoutSession =>
+    JSON.parse(JSON.stringify(value)) as WorkoutSession
+  let activeSession = cloneSession(session)
+  const phases = reactive<TimerPhase[]>(buildTimerPhases(activeSession))
   const storageKey = import.meta.client && date ? `tanden:timer:${date}` : null
 
   const index = ref(0)
@@ -31,11 +35,13 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
   /** Séance interrompue retrouvée au montage ; repasse à `null` dès que l'utilisateur a tranché. */
   const savedSnapshot = ref<TimerSnapshot | null>(null)
 
-  const cumulativeBefore = phases.reduce<number[]>((acc, _p, i) => {
-    acc[i] = (acc[i - 1] ?? 0) + (i > 0 ? phases[i - 1]!.seconds : 0)
-    return acc
-  }, [])
-  const totalSeconds = phases.reduce((acc, p) => acc + p.seconds, 0)
+  const cumulativeBefore = computed(() =>
+    phases.reduce<number[]>((acc, _p, i) => {
+      acc[i] = (acc[i - 1] ?? 0) + (i > 0 ? phases[i - 1]!.seconds : 0)
+      return acc
+    }, []),
+  )
+  const totalSeconds = computed(() => phases.reduce((acc, p) => acc + p.seconds, 0))
 
   const current = computed<TimerPhase | null>(() => phases[index.value] ?? null)
   const next = computed<TimerPhase | null>(() => phases[index.value + 1] ?? null)
@@ -43,7 +49,7 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
   /** Retrouve l'exercice source d'une phase (pour afficher son guide). */
   function exerciseOf(phase: TimerPhase | null): Exercise | null {
     if (!phase) return null
-    return session.blocks[phase.blockIndex]?.exercises[phase.exerciseIndex] ?? null
+    return activeSession.blocks[phase.blockIndex]?.exercises[phase.exerciseIndex] ?? null
   }
   const currentExercise = computed<Exercise | null>(() => exerciseOf(current.value))
   const nextExercise = computed<Exercise | null>(() => exerciseOf(next.value))
@@ -54,12 +60,12 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
   })
   const elapsedSeconds = computed(() => {
     const c = current.value
-    if (finished.value) return totalSeconds
+    if (finished.value) return totalSeconds.value
     if (!c) return 0
-    return (cumulativeBefore[index.value] ?? 0) + (c.seconds - remaining.value)
+    return (cumulativeBefore.value[index.value] ?? 0) + (c.seconds - remaining.value)
   })
   const overallProgress = computed(() =>
-    totalSeconds ? Math.min(1, elapsedSeconds.value / totalSeconds) : 0,
+    totalSeconds.value ? Math.min(1, elapsedSeconds.value / totalSeconds.value) : 0,
   )
 
   let endsAt = 0
@@ -282,6 +288,37 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
     writeSnapshot()
   }
 
+  /** Remplace uniquement la suite du timer après une adaptation persistée côté serveur. */
+  function applyAdaptedSession(adapted: WorkoutSession, skipCurrentExercise = false): void {
+    const currentIndex = index.value
+    const source = current.value
+      ? {
+          blockIndex: current.value.blockIndex,
+          exerciseIndex: current.value.exerciseIndex,
+        }
+      : null
+    const nextPhases = buildTimerPhases(adapted)
+    activeSession = cloneSession(adapted)
+    phases.splice(0, phases.length, ...nextPhases)
+
+    if (skipCurrentExercise && source) {
+      const nextIndex = phases.findIndex(
+        (phase, phaseIndex) =>
+          phaseIndex > currentIndex &&
+          (phase.blockIndex !== source.blockIndex || phase.exerciseIndex !== source.exerciseIndex),
+      )
+      if (nextIndex < 0) {
+        finish()
+        return
+      }
+      enterPhase(nextIndex)
+    } else if (index.value >= phases.length) {
+      finish()
+      return
+    }
+    writeSnapshot()
+  }
+
   onMounted(() => {
     savedSnapshot.value = readSnapshot()
   })
@@ -318,5 +355,6 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
     prev,
     stop,
     reset,
+    applyAdaptedSession,
   }
 }

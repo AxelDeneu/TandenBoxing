@@ -25,8 +25,16 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (!findSessionByDate(date)) {
+  const session = findSessionByDate(date)
+  if (!session) {
     throw createError({ statusCode: 404, statusMessage: 'Séance introuvable.' })
+  }
+  if (session.status === 'in_progress') {
+    throw createError({
+      statusCode: 409,
+      statusMessage:
+        'Une séance démarrée ne peut être régénérée. Utilise les actions du timer pour adapter uniquement la suite.',
+    })
   }
 
   triggerGeneration(date, { regenerate: true, adjustment: parsed.data.instruction })

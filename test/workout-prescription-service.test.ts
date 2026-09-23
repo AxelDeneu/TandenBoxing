@@ -28,6 +28,7 @@ beforeEach(() => {
   vi.stubGlobal('listCompletedSessions', () => [])
   vi.stubGlobal('listRecentSessions', () => [])
   vi.stubGlobal('listSessionFeedbackByIds', () => [])
+  vi.stubGlobal('listSessionAdaptationsBefore', () => [])
   vi.stubGlobal('getExercisePreferenceConstraints', (asOfDate: string) => ({
     version: 'exercise-preferences/v1',
     asOfDate,
