@@ -146,6 +146,8 @@ export const sessionFeedback = sqliteTable('session_feedback', {
   enjoyment: integer('enjoyment'),
   comment: text('comment'),
   actualDurationSec: integer('actual_duration_sec'),
+  /** Nombre de blocs distincts dont une phase d'effort a été ignorée dans le timer. */
+  skippedBlockCount: integer('skipped_block_count'),
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),
@@ -362,6 +364,8 @@ export const generationJobs = sqliteTable(
     reuseKind: text('reuse_kind').$type<GenerationReuseKind>().notNull().default('none'),
     reusedBlockCount: integer('reused_block_count').notNull().default(0),
     fallbackUsed: integer('fallback_used', { mode: 'boolean' }).notNull().default(false),
+    policyCorrectionCount: integer('policy_correction_count'),
+    policyCompliant: integer('policy_compliant', { mode: 'boolean' }),
     queuedAt: integer('queued_at', { mode: 'timestamp' })
       .notNull()
       .default(sql`(unixepoch())`),

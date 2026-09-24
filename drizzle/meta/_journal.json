@@ -64,6 +64,13 @@
       "when": 1790254623393,
       "tag": "0008_typical_prodigy",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790256426354,
+      "tag": "0009_fearless_payback",
+      "breakpoints": true
     }
   ]
 }

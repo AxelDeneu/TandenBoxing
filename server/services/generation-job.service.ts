@@ -241,6 +241,8 @@ export async function processClaimedGenerationJob(
       reuseKind: persisted.reusedFromSessionId ? 'session' : 'none',
       reusedBlockCount: 0,
       fallbackUsed: persisted.fallbackUsed,
+      policyCorrectionCount: 0,
+      policyCompliant: true,
     }
     completeGenerationJob(job, {
       ...metrics,

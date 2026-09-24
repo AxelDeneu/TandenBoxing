@@ -33,6 +33,10 @@ const preferenceReasonOptions = PREFERENCE_REASON_OPTIONS.map(({ value, label })
 const timedSeconds = Number(route.query.duree)
 const timedMinutes =
   Number.isFinite(timedSeconds) && timedSeconds > 0 ? Math.round(timedSeconds / 60) : null
+const rawSkippedBlockCount = Number(route.query.blocsIgnores)
+const skippedBlockCount = Number.isFinite(rawSkippedBlockCount)
+  ? Math.max(0, Math.min(100, rawSkippedBlockCount))
+  : null
 
 const form = reactive({
   overallDifficulty: null as number | null,
@@ -89,6 +93,7 @@ async function submit() {
         soreness: form.soreness,
         comment: form.comment || null,
         actualDurationSec: form.actualDurationMin ? Math.round(form.actualDurationMin * 60) : null,
+        skippedBlockCount,
         exercises: exercises.value.map((e) => ({
           blockIndex: e.blockIndex,
           exerciseIndex: e.exerciseIndex,

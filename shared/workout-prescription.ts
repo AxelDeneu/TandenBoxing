@@ -13,6 +13,9 @@ import {
 import type { WorkoutVarietyConstraints } from './session-variety'
 import type { SkillAwarePrescription } from './skill-mastery'
 
+/** Version du contrat et des règles qui produisent la prescription avant tout appel modèle. */
+export const WORKOUT_PRESCRIPTION_VERSION = 'workout-prescription/v1'
+
 /** Budget en secondes pour chaque type de bloc générable. Une valeur nulle interdit le bloc. */
 export const blockBudgetsSchema = z.object({
   echauffement: z.number().int().nonnegative(),
