@@ -16,6 +16,13 @@ import type {
   SessionAutoregulationConstraints,
   SessionIntention,
 } from '../../shared/session-autoregulation'
+import type {
+  GenerationErrorKind,
+  GenerationJobRequest,
+  GenerationJobSource,
+  GenerationJobStatus,
+  GenerationReuseKind,
+} from '../../shared/generation-jobs'
 import type { WorkoutSession } from '../../shared/session-schema'
 
 const timestamps = {
@@ -102,6 +109,11 @@ export const sessions = sqliteTable('sessions', {
   /** Structure complète de la séance (blocs / exercices / intervalles). */
   structure: text('structure', { mode: 'json' }).$type<WorkoutSession>().notNull(),
   aiModel: text('ai_model').notNull(),
+  /** Origine et empreinte du contexte, nécessaires à l'invalidation des séances anticipées. */
+  generationSource: text('generation_source').notNull().default('model'),
+  generationContextHash: text('generation_context_hash'),
+  fallbackUsed: integer('fallback_used', { mode: 'boolean' }).notNull().default(false),
+  reusedFromSessionId: integer('reused_from_session_id'),
   /** Contexte envoyé au modèle (traçabilité / debug). */
   generationContext: text('generation_context', { mode: 'json' }).$type<unknown>(),
   generatedAt: integer('generated_at', { mode: 'timestamp' }),
@@ -316,6 +328,82 @@ export const aiUsage = sqliteTable('ai_usage', {
     .default(sql`(unixepoch())`),
 })
 
+/**
+ * File durable de génération. La clé unique porte sur la date et l'empreinte fonctionnelle :
+ * deux processus ne peuvent donc pas créer deux générations concurrentes du même contenu.
+ */
+export const generationJobs = sqliteTable(
+  'generation_jobs',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    sessionDate: text('session_date').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    contextHash: text('context_hash').notNull(),
+    request: text('request', { mode: 'json' }).$type<GenerationJobRequest>().notNull(),
+    source: text('source').$type<GenerationJobSource>().notNull(),
+    status: text('status').$type<GenerationJobStatus>().notNull().default('queued'),
+    attemptCount: integer('attempt_count').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(3),
+    nextAttemptAt: integer('next_attempt_at', { mode: 'timestamp' }).notNull(),
+    leaseOwner: text('lease_owner'),
+    leaseExpiresAt: integer('lease_expires_at', { mode: 'timestamp' }),
+    lastErrorKind: text('last_error_kind').$type<GenerationErrorKind>(),
+    lastErrorCode: text('last_error_code'),
+    lastErrorMessage: text('last_error_message'),
+    actionableMessage: text('actionable_message'),
+    modelCalls: integer('model_calls').notNull().default(0),
+    inputTokens: integer('input_tokens').notNull().default(0),
+    outputTokens: integer('output_tokens').notNull().default(0),
+    cacheCreationTokens: integer('cache_creation_tokens').notNull().default(0),
+    cacheReadTokens: integer('cache_read_tokens').notNull().default(0),
+    estimatedCostUsd: real('estimated_cost_usd'),
+    durationMs: integer('duration_ms'),
+    providerLatencyMs: integer('provider_latency_ms').notNull().default(0),
+    reuseKind: text('reuse_kind').$type<GenerationReuseKind>().notNull().default('none'),
+    reusedBlockCount: integer('reused_block_count').notNull().default(0),
+    fallbackUsed: integer('fallback_used', { mode: 'boolean' }).notNull().default(false),
+    queuedAt: integer('queued_at', { mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    startedAt: integer('started_at', { mode: 'timestamp' }),
+    completedAt: integer('completed_at', { mode: 'timestamp' }),
+    failedAt: integer('failed_at', { mode: 'timestamp' }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('generation_jobs_idempotency_key_unique').on(table.idempotencyKey),
+    index('generation_jobs_session_date_idx').on(table.sessionDate),
+    index('generation_jobs_dispatch_idx').on(table.status, table.nextAttemptAt),
+  ],
+)
+
+/** Un essai par prise de lease : conserve l'historique des retries et de leurs erreurs. */
+export const generationJobAttempts = sqliteTable(
+  'generation_job_attempts',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    jobId: integer('job_id')
+      .notNull()
+      .references(() => generationJobs.id, { onDelete: 'cascade' }),
+    attemptNumber: integer('attempt_number').notNull(),
+    status: text('status').notNull().default('running'),
+    errorKind: text('error_kind').$type<GenerationErrorKind>(),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    backoffMs: integer('backoff_ms'),
+    modelCalls: integer('model_calls').notNull().default(0),
+    durationMs: integer('duration_ms'),
+    startedAt: integer('started_at', { mode: 'timestamp' })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    completedAt: integer('completed_at', { mode: 'timestamp' }),
+  },
+  (table) => [
+    uniqueIndex('generation_job_attempts_job_attempt_unique').on(table.jobId, table.attemptNumber),
+    index('generation_job_attempts_job_id_idx').on(table.jobId),
+  ],
+)
+
 export type Settings = typeof settings.$inferSelect
 export type NewSettings = typeof settings.$inferInsert
 export type Profile = typeof profile.$inferSelect
@@ -338,3 +426,7 @@ export type SessionPlan = typeof sessionPlans.$inferSelect
 export type NewSessionPlan = typeof sessionPlans.$inferInsert
 export type AiUsage = typeof aiUsage.$inferSelect
 export type NewAiUsage = typeof aiUsage.$inferInsert
+export type GenerationJob = typeof generationJobs.$inferSelect
+export type NewGenerationJob = typeof generationJobs.$inferInsert
+export type GenerationJobAttempt = typeof generationJobAttempts.$inferSelect
+export type NewGenerationJobAttempt = typeof generationJobAttempts.$inferInsert

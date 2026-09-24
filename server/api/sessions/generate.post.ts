@@ -8,15 +8,6 @@ export default defineEventHandler(async (event) => {
     (): { date?: string; regenerate?: boolean } => ({}),
   )
 
-  const { anthropicApiKey } = useRuntimeConfig()
-  if (!anthropicApiKey) {
-    throw createError({
-      statusCode: 500,
-      statusMessage:
-        'Clé API Anthropic manquante. Renseigne NUXT_ANTHROPIC_API_KEY dans l’environnement.',
-    })
-  }
-
   const date =
     body?.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
       ? body.date
@@ -33,6 +24,15 @@ export default defineEventHandler(async (event) => {
   // Demande explicite : lève le marqueur « volontairement vide » posé par une suppression/report.
   undismissDate(date)
 
-  triggerGeneration(date, { regenerate: Boolean(body?.regenerate) })
-  return { ok: true, generating: true, date }
+  const job = requestGenerationJob(date, {
+    regenerate: Boolean(body?.regenerate),
+    source: 'user',
+    retryFailed: true,
+  })
+  return {
+    ok: true,
+    generating: isGenerating(date),
+    date,
+    job: toPublicGenerationJob(job ?? findLatestGenerationJob(date)),
+  }
 })

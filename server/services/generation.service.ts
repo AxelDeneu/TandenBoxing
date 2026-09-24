@@ -10,6 +10,11 @@ import {
   type PreferenceReasonCode,
 } from '../../shared/exercise-preferences'
 import { GENERATOR_VERSIONS, type GeneratorVersions } from '../../shared/generator-version'
+import {
+  emptyGenerationRunMetrics,
+  type GenerationJobSource,
+  type GenerationRunMetrics,
+} from '../../shared/generation-jobs'
 import { buildSessionPrompt } from '../../shared/generation-prompt'
 import {
   GeneratedSessionValidationError,
@@ -20,12 +25,15 @@ import {
 import { tagExerciseWithSkills } from '../../shared/skill-history'
 import {
   estimateSessionSeconds,
+  blockSchema,
   exerciseSchema,
   SESSION_CATEGORY_META,
   sessionCategory,
   workoutFocus,
   workoutSessionSchema,
   type Exercise,
+  type BlockType,
+  type WorkoutBlock,
   type WorkoutSession,
 } from '../../shared/session-schema'
 import {
@@ -37,8 +45,15 @@ import {
 } from '../../shared/session-variety'
 import type { SkillProgressionSnapshot } from '../../shared/skill-mastery'
 import type { VarietyAwareWorkoutPrescription } from '../../shared/workout-prescription'
-import type { NewSession, Session } from '../database/schema'
+import type { Session } from '../database/schema'
 import { buildWorkoutPrescription } from './workout-prescription.service'
+import {
+  blockTypesMissingFromReuse,
+  buildDeterministicFallbackSession,
+  findReusableBlocks,
+  findReusableSession,
+  orderedGenerationBlocks,
+} from './session-library.service'
 
 /** Outil de sortie structurée imposé au modèle pour une séance complète. */
 const SESSION_TOOL = {
@@ -48,6 +63,17 @@ const SESSION_TOOL = {
   input_schema: z.toJSONSchema(workoutSessionSchema, {
     target: 'draft-2020-12',
   }) as AnthropicSDK.Tool.InputSchema,
+}
+
+/** Sortie réduite : le modèle ne renvoie que les blocs absents de la bibliothèque locale. */
+const PARTIAL_SESSION_TOOL = {
+  name: 'proposer_parties_seance',
+  description:
+    'Renvoie les métadonnées de séance et uniquement les blocs manquants demandés par l’application.',
+  input_schema: z.toJSONSchema(
+    workoutSessionSchema.extend({ blocks: z.array(blockSchema).min(1) }),
+    { target: 'draft-2020-12' },
+  ) as AnthropicSDK.Tool.InputSchema,
 }
 
 /** Outil de sortie structurée pour un exercice unique (remplacement). */
@@ -178,21 +204,88 @@ function recordUsage(
   response: AnthropicSDK.Message,
   kind: 'seance' | 'exercice' | 'ajustement',
   date: string | null,
-): void {
+): Pick<
+  GenerationRunMetrics,
+  'inputTokens' | 'outputTokens' | 'cacheCreationTokens' | 'cacheReadTokens'
+> {
+  const usage = {
+    inputTokens: response.usage.input_tokens ?? 0,
+    outputTokens: response.usage.output_tokens ?? 0,
+    cacheCreationTokens: response.usage.cache_creation_input_tokens ?? 0,
+    cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+  }
   try {
-    const u = response.usage
     recordAiUsage({
       sessionDate: date,
       kind,
       model: response.model,
-      inputTokens: u.input_tokens ?? 0,
-      outputTokens: u.output_tokens ?? 0,
-      cacheCreationTokens: u.cache_creation_input_tokens ?? 0,
-      cacheReadTokens: u.cache_read_input_tokens ?? 0,
+      ...usage,
     })
   } catch (error) {
     console.error('[generation] Enregistrement de la conso échoué :', error)
   }
+  return usage
+}
+
+function addResponseUsage(
+  metrics: GenerationRunMetrics,
+  response: AnthropicSDK.Message,
+  kind: 'seance' | 'exercice' | 'ajustement',
+  date: string | null,
+  latencyMs: number,
+): void {
+  const usage = recordUsage(response, kind, date)
+  metrics.modelCalls += 1
+  metrics.inputTokens += usage.inputTokens
+  metrics.outputTokens += usage.outputTokens
+  metrics.cacheCreationTokens += usage.cacheCreationTokens
+  metrics.cacheReadTokens += usage.cacheReadTokens
+  metrics.providerLatencyMs += latencyMs
+}
+
+export class GenerationExecutionError extends Error {
+  readonly kind: 'temporary' | 'permanent'
+  readonly code: string
+  readonly actionableMessage: string
+
+  constructor(
+    kind: 'temporary' | 'permanent',
+    code: string,
+    message: string,
+    actionableMessage: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options)
+    this.name = 'GenerationExecutionError'
+    this.kind = kind
+    this.code = code
+    this.actionableMessage = actionableMessage
+  }
+}
+
+function providerFailure(error: unknown): GenerationExecutionError {
+  if (error instanceof GenerationExecutionError) return error
+  const status =
+    typeof error === 'object' && error && 'status' in error && typeof error.status === 'number'
+      ? error.status
+      : typeof error === 'object' &&
+          error &&
+          'statusCode' in error &&
+          typeof error.statusCode === 'number'
+        ? error.statusCode
+        : null
+  const permanent = status !== null && [400, 401, 403, 404, 422].includes(status)
+  return new GenerationExecutionError(
+    permanent ? 'permanent' : 'temporary',
+    status ? `PROVIDER_HTTP_${status}` : 'PROVIDER_UNAVAILABLE',
+    permanent
+      ? 'Le fournisseur a refusé durablement la demande de génération.'
+      : 'Le fournisseur est temporairement indisponible.',
+    permanent
+      ? 'Vérifie la clé et le modèle configurés, puis relance la génération.'
+      : 'Une nouvelle tentative sera lancée automatiquement.',
+    { cause: error },
+  )
 }
 
 interface HistoryEntry {
@@ -470,96 +563,286 @@ export function buildGenerationContext(date: string): {
 
   return { settingsRow, context }
 }
+export interface GenerateSessionOptions {
+  regenerate?: boolean
+  adjustment?: string | null
+  contextHash?: string
+  source?: GenerationJobSource
+}
+
+export interface GeneratedSessionResult {
+  session: Session
+  metrics: GenerationRunMetrics
+}
+
+interface PersistGenerationMetadata {
+  source: 'model' | 'prefetch' | 'reused' | 'fallback'
+  contextHash?: string
+  fallbackUsed?: boolean
+  reusedFromSessionId?: number | null
+  aiModel?: string
+}
+
+function persistResolvedSession(
+  date: string,
+  session: WorkoutSession,
+  context: GenerationContext,
+  settingsRow: ReturnType<typeof getSettings>,
+  metadata: PersistGenerationMetadata,
+): Session {
+  const tagged: WorkoutSession = {
+    ...session,
+    blocks: session.blocks.map((block) => ({
+      ...block,
+      exercises: block.exercises.map(tagExerciseWithSkills),
+    })),
+  }
+  const prescribedConsolidation = context.prescription.variety.consolidation
+  const consolidation: ConsolidationIntent | undefined =
+    prescribedConsolidation.intentional && prescribedConsolidation.reason
+      ? { intentional: true, reason: prescribedConsolidation.reason }
+      : undefined
+  context.evaluationVariete = assessSessionVariety(tagged, context.memoire.variete.sessions, {
+    consolidation,
+  })
+  context.preferenceInfluence = tracePreferenceInfluence(
+    tagged,
+    context.prescription.exercisePreferences,
+  )
+  return upsertSessionByDate({
+    date,
+    status: 'generated',
+    title: tagged.title,
+    category: tagged.category,
+    focus: tagged.focus,
+    summary: tagged.summary,
+    coachNote: tagged.coachNote,
+    targetDurationMin: context.dureeCibleMin,
+    estimatedDurationMin: Math.max(1, Math.round(estimateSessionSeconds(tagged) / 60)),
+    structure: tagged,
+    aiModel: metadata.aiModel ?? settingsRow.aiModel,
+    generationSource: metadata.source,
+    generationContextHash: metadata.contextHash ?? null,
+    fallbackUsed: metadata.fallbackUsed ?? false,
+    reusedFromSessionId: metadata.reusedFromSessionId ?? null,
+    generationContext: context,
+    generatedAt: new Date(),
+  })
+}
+
+function lockAdjustmentPrescription(
+  date: string,
+  context: GenerationContext,
+  existing: Session | undefined,
+  adjustment: string | undefined,
+): void {
+  if (!adjustment || !existing?.category) return
+  context.demande = {
+    categorie: existing.category,
+    focus: existing.focus,
+    competenceCible: context.demande?.competenceCible ?? null,
+    focusLibre: context.demande?.focusLibre ?? null,
+    note: context.demande?.note ?? null,
+  }
+  context.prescription = buildWorkoutPrescription(
+    date,
+    {
+      category: existing.category,
+      focus: existing.focus,
+      requestedSkillId: context.prescription.skillSelection.requestedSkillId,
+    },
+    context.progressionCompetences,
+  )
+}
+
+function partialGenerationPrompt(
+  basePrompt: string,
+  context: GenerationContext,
+  reusableBlocks: ReadonlyMap<BlockType, WorkoutBlock>,
+  missingBlockTypes: readonly BlockType[],
+): string {
+  return [
+    basePrompt,
+    '',
+    'BLOCS VALIDÉS ET RÉUTILISÉS PAR L’APPLICATION (ne les renvoie pas) :',
+    '```json',
+    JSON.stringify([...reusableBlocks.values()], null, 2),
+    '```',
+    `Renvoie uniquement les blocs manquants suivants : ${missingBlockTypes.join(', ')}.`,
+    'Budgets exacts des blocs manquants :',
+    '```json',
+    JSON.stringify(
+      Object.fromEntries(
+        missingBlockTypes.map((type) => [type, context.prescription.blockBudgets[type]]),
+      ),
+      null,
+      2,
+    ),
+    '```',
+    `Appelle l’outil "${PARTIAL_SESSION_TOOL.name}". Son champ blocks ne doit contenir que ces blocs manquants ; les métadonnées décrivent la séance complète.`,
+  ].join('\n')
+}
+
+function preparePartialCandidate(
+  input: unknown,
+  reusableBlocks: ReadonlyMap<BlockType, WorkoutBlock>,
+  missingBlockTypes: readonly BlockType[],
+): unknown {
+  if (typeof input !== 'object' || !input) return input
+  const candidate = input as Record<string, unknown>
+  const generatedBlocks = z.array(blockSchema).safeParse(candidate.blocks)
+  if (!generatedBlocks.success) return input
+  const missing = new Set(missingBlockTypes)
+  return {
+    ...candidate,
+    blocks: orderedGenerationBlocks(
+      generatedBlocks.data.filter((block) => missing.has(block.type)),
+      reusableBlocks,
+    ),
+  }
+}
 
 /**
- * Génère (ou régénère) la séance du jour pour `date` via Anthropic et la persiste.
- * Idempotent hors régénération : si la séance existe déjà, elle est renvoyée telle quelle.
+ * Génère ou réutilise une séance avec des métriques complètes. Le SDK ne fait aucun retry
+ * caché : le job persistant reste l'unique pilote du nombre d'essais et du backoff.
  */
-export async function generateSessionForDate(
+export async function generateSessionForDateDetailed(
   date: string,
-  options: { regenerate?: boolean; adjustment?: string } = {},
-): Promise<Session> {
+  options: GenerateSessionOptions = {},
+): Promise<GeneratedSessionResult> {
   const existing = findSessionByDate(date)
   const adjustment = options.adjustment?.trim()
   if (existing?.status === 'in_progress' && (options.regenerate || adjustment)) {
-    throw createError({
-      statusCode: 409,
-      statusMessage:
-        'Une séance démarrée ne peut être régénérée. Utilise les actions du timer pour adapter uniquement la suite.',
-    })
-  }
-  // Un ajustement régénère toujours ; sinon, une séance existante est renvoyée telle quelle.
-  if (existing && !options.regenerate && !adjustment) return existing
-
-  const { settingsRow, context } = buildGenerationContext(date)
-
-  // Ajustement d'une séance existante : on verrouille son intention (catégorie + focus) pour que
-  // la consigne modifie la séance sans repartir de zéro sur un autre thème.
-  if (adjustment && existing?.category) {
-    context.demande = {
-      categorie: existing.category,
-      focus: existing.focus,
-      competenceCible: context.demande?.competenceCible ?? null,
-      focusLibre: context.demande?.focusLibre ?? null,
-      note: context.demande?.note ?? null,
-    }
-    context.prescription = buildWorkoutPrescription(
-      date,
-      {
-        category: existing.category,
-        focus: existing.focus,
-        requestedSkillId: context.prescription.skillSelection.requestedSkillId,
-      },
-      context.progressionCompetences,
+    throw new GenerationExecutionError(
+      'permanent',
+      'SESSION_ALREADY_STARTED',
+      'Une séance démarrée ne peut être régénérée.',
+      'Utilise les actions du timer pour adapter uniquement la suite.',
     )
   }
+  if (existing && !options.regenerate && !adjustment) {
+    return { session: existing, metrics: emptyGenerationRunMetrics() }
+  }
+
+  const { settingsRow, context } = buildGenerationContext(date)
+  const metrics = emptyGenerationRunMetrics()
+  lockAdjustmentPrescription(date, context, existing, adjustment)
   const demande = context.demande
 
-  const userPrompt = buildSessionPrompt({
+  const mayReuse = !adjustment && !existing
+  if (mayReuse) {
+    const reusable = findReusableSession(date, context)
+    if (reusable) {
+      metrics.reuseKind = 'session'
+      metrics.reusedBlockCount = reusable.structure.blocks.length
+      return {
+        session: persistResolvedSession(
+          date,
+          structuredClone(reusable.structure),
+          context,
+          settingsRow,
+          {
+            source: 'reused',
+            contextHash: options.contextHash,
+            reusedFromSessionId: reusable.id,
+            aiModel: reusable.aiModel,
+          },
+        ),
+        metrics,
+      }
+    }
+  }
+
+  const reusableBlocks: Map<BlockType, WorkoutBlock> = mayReuse
+    ? findReusableBlocks(date, context)
+    : new Map()
+  let missingBlockTypes = blockTypesMissingFromReuse(context, reusableBlocks)
+  if (!missingBlockTypes.length && reusableBlocks.size) {
+    const coreType = (['technique', 'cardio', 'renforcement'] as BlockType[]).find((type) =>
+      reusableBlocks.has(type),
+    )
+    if (coreType) reusableBlocks.delete(coreType)
+    missingBlockTypes = blockTypesMissingFromReuse(context, reusableBlocks)
+  }
+  if (reusableBlocks.size) {
+    metrics.reuseKind = 'blocks'
+    metrics.reusedBlockCount = reusableBlocks.size
+  }
+
+  const basePrompt = buildSessionPrompt({
     dateLabel: formatDateFr(date),
     context,
     adjustment,
     existingStructure: existing?.structure,
   })
+  const partial = reusableBlocks.size > 0 && missingBlockTypes.length > 0
+  const userPrompt = partial
+    ? partialGenerationPrompt(basePrompt, context, reusableBlocks, missingBlockTypes)
+    : basePrompt
 
-  const client = useAnthropic()
-  let response
+  const { anthropicApiKey } = useRuntimeConfig()
+  if (!anthropicApiKey) {
+    throw new GenerationExecutionError(
+      'permanent',
+      'PROVIDER_NOT_CONFIGURED',
+      'Aucune clé fournisseur n’est configurée.',
+      'Configure NUXT_ANTHROPIC_API_KEY ou utilise la séance de secours locale.',
+    )
+  }
+
+  let client: ReturnType<typeof useAnthropic>
+  try {
+    client = useAnthropic()
+  } catch (error) {
+    throw providerFailure(error)
+  }
+  const selectedTool = partial ? PARTIAL_SESSION_TOOL : SESSION_TOOL
+  let response: AnthropicSDK.Message
+  const providerStartedAt = Date.now()
   try {
     response = await client.messages.create(
       {
         model: settingsRow.aiModel,
-        max_tokens: 12_000,
+        max_tokens: partial ? 9_000 : 12_000,
         system: SYSTEM_BLOCKS,
-        tools: [SESSION_TOOL],
-        tool_choice: { type: 'tool', name: SESSION_TOOL.name },
+        tools: [selectedTool],
+        tool_choice: { type: 'tool', name: selectedTool.name },
         messages: [{ role: 'user', content: userPrompt }],
       },
-      { timeout: 120_000, maxRetries: 1 },
+      { timeout: 120_000, maxRetries: 0 },
     )
   } catch (error) {
     console.error('[generation] Appel Anthropic échoué :', error)
-    throw createError({
-      statusCode: 502,
-      statusMessage: 'La génération de la séance a échoué (erreur du modèle). Réessaie.',
-    })
+    throw providerFailure(error)
   }
-  recordUsage(response, adjustment ? 'ajustement' : 'seance', date)
+  addResponseUsage(
+    metrics,
+    response,
+    adjustment ? 'ajustement' : 'seance',
+    date,
+    Date.now() - providerStartedAt,
+  )
 
   const toolUse = response.content.find(
     (block): block is AnthropicSDK.ToolUseBlock => block.type === 'tool_use',
   )
   if (!toolUse) {
-    throw createError({
-      statusCode: 502,
-      statusMessage: "Le modèle n'a pas renvoyé de séance exploitable.",
-    })
+    throw new GenerationExecutionError(
+      'temporary',
+      'MODEL_TOOL_MISSING',
+      "Le modèle n'a pas renvoyé de séance exploitable.",
+      'Une nouvelle tentative sera lancée automatiquement.',
+    )
   }
+  const initialCandidate = partial
+    ? preparePartialCandidate(toolUse.input, reusableBlocks, missingBlockTypes)
+    : toolUse.input
 
   const requestedCategory = sessionCategory.safeParse(demande?.categorie)
   const requestedFocus = workoutFocus.safeParse(demande?.focus)
   let session: WorkoutSession
   try {
-    session = await resolveGeneratedSession(toolUse.input, {
+    session = await resolveGeneratedSession(initialCandidate, {
       policy: {
         targetDurationMin: context.dureeCibleMin,
         requestedCategory: requestedCategory.success ? requestedCategory.data : null,
@@ -596,7 +879,8 @@ export async function generateSessionForDate(
           `Appelle l'outil "proposer_seance" avec la séance corrigée complète.`,
         ].join('\n')
 
-        let correctionResponse
+        let correctionResponse: AnthropicSDK.Message
+        const correctionStartedAt = Date.now()
         try {
           correctionResponse = await client.messages.create(
             {
@@ -607,18 +891,19 @@ export async function generateSessionForDate(
               tool_choice: { type: 'tool', name: SESSION_TOOL.name },
               messages: [{ role: 'user', content: correctionPrompt }],
             },
-            { timeout: 120_000, maxRetries: 1 },
+            { timeout: 120_000, maxRetries: 0 },
           )
         } catch (error) {
           console.error('[generation] Correction Anthropic échouée :', error)
-          throw createError({
-            statusCode: 502,
-            statusMessage:
-              'La séance générée était invalide et sa correction a échoué. Aucune séance n’a été enregistrée.',
-          })
+          throw providerFailure(error)
         }
-
-        recordUsage(correctionResponse, adjustment ? 'ajustement' : 'seance', date)
+        addResponseUsage(
+          metrics,
+          correctionResponse,
+          adjustment ? 'ajustement' : 'seance',
+          date,
+          Date.now() - correctionStartedAt,
+        )
         return correctionResponse.content.find(
           (block): block is AnthropicSDK.ToolUseBlock => block.type === 'tool_use',
         )?.input
@@ -626,54 +911,73 @@ export async function generateSessionForDate(
     })
   } catch (error) {
     if (error instanceof GeneratedSessionValidationError) {
-      throw createError({
-        statusCode: 502,
-        statusMessage:
-          'La séance reste invalide après une tentative de correction. Aucune séance n’a été enregistrée.',
-      })
+      throw new GenerationExecutionError(
+        'temporary',
+        'MODEL_OUTPUT_INVALID',
+        'La séance reste invalide après une correction ciblée.',
+        'Une nouvelle tentative sera lancée automatiquement.',
+        { cause: error },
+      )
     }
     throw error
   }
 
-  session = {
-    ...session,
-    blocks: session.blocks.map((block) => ({
-      ...block,
-      exercises: block.exercises.map(tagExerciseWithSkills),
-    })),
+  return {
+    session: persistResolvedSession(date, session, context, settingsRow, {
+      source: options.source === 'prefetch' ? 'prefetch' : 'model',
+      contextHash: options.contextHash,
+    }),
+    metrics,
   }
+}
 
-  const prescribedConsolidation = context.prescription.variety.consolidation
-  const consolidation: ConsolidationIntent | undefined =
-    prescribedConsolidation.intentional && prescribedConsolidation.reason
-      ? { intentional: true, reason: prescribedConsolidation.reason }
-      : undefined
-  context.evaluationVariete = assessSessionVariety(session, context.memoire.variete.sessions, {
-    consolidation,
-  })
-  context.preferenceInfluence = tracePreferenceInfluence(
-    session,
-    context.prescription.exercisePreferences,
-  )
-  const values: NewSession = {
-    date,
-    status: 'generated',
-    title: session.title,
-    category: session.category,
-    focus: session.focus,
-    summary: session.summary,
-    coachNote: session.coachNote,
-    // Durée cible effective : celle du plan sur mesure si présent, sinon celle des réglages.
-    targetDurationMin: context.dureeCibleMin,
-    // Durée réellement induite par les intervalles : source de vérité (le modèle s'en écarte souvent).
-    estimatedDurationMin: Math.max(1, Math.round(estimateSessionSeconds(session) / 60)),
-    structure: session,
-    aiModel: settingsRow.aiModel,
-    generationContext: context,
-    generatedAt: new Date(),
+export async function generateSessionForDate(
+  date: string,
+  options: GenerateSessionOptions = {},
+): Promise<Session> {
+  return (await generateSessionForDateDetailed(date, options)).session
+}
+
+/** Fallback sans réseau, appelé une seule fois lorsque la politique de retry est épuisée. */
+export function generateDeterministicFallbackForDate(
+  date: string,
+  options: Pick<GenerateSessionOptions, 'contextHash'> = {},
+): GeneratedSessionResult {
+  if (findSessionByDate(date)) {
+    throw new GenerationExecutionError(
+      'permanent',
+      'FALLBACK_WOULD_OVERWRITE_SESSION',
+      'Une séance existe déjà pour cette date.',
+      'Conserve la séance existante ou relance explicitement sa régénération.',
+    )
   }
-
-  return upsertSessionByDate(values)
+  const { settingsRow, context } = buildGenerationContext(date)
+  const reusableBlocks = findReusableBlocks(date, context)
+  let built: ReturnType<typeof buildDeterministicFallbackSession>
+  try {
+    built = buildDeterministicFallbackSession(context, reusableBlocks)
+  } catch (error) {
+    throw new GenerationExecutionError(
+      'permanent',
+      'FALLBACK_POLICY_REJECTED',
+      'La séance locale ne peut pas respecter toutes les contraintes actives.',
+      'Modifie les exclusions incompatibles ou relance après rétablissement du fournisseur.',
+      { cause: error },
+    )
+  }
+  const metrics = emptyGenerationRunMetrics()
+  metrics.fallbackUsed = true
+  metrics.reusedBlockCount = built.reusedBlockCount
+  metrics.reuseKind = built.reusedBlockCount ? 'blocks' : 'none'
+  return {
+    session: persistResolvedSession(date, built.session, context, settingsRow, {
+      source: 'fallback',
+      contextHash: options.contextHash,
+      fallbackUsed: true,
+      aiModel: 'deterministic-local/v1',
+    }),
+    metrics,
+  }
 }
 
 /** Génère un exercice de remplacement cohérent avec la séance et le bloc concernés. */
@@ -752,51 +1056,4 @@ export async function generateReplacementExercise(
     })
   }
   return replacement
-}
-
-/**
- * Génération en arrière-plan (fire-and-forget), dédupliquée par date : plusieurs
- * requêtes simultanées ne lancent qu'une seule génération.
- */
-const inFlightGenerations = new Set<string>()
-
-export function isGenerating(date: string): boolean {
-  return inFlightGenerations.has(date)
-}
-
-export function triggerGeneration(
-  date: string,
-  options: { regenerate?: boolean; adjustment?: string } = {},
-): void {
-  if (inFlightGenerations.has(date)) return
-  inFlightGenerations.add(date)
-  generateSessionForDate(date, options)
-    .catch((error) => console.error('[generation] Génération en arrière-plan échouée :', error))
-    .finally(() => inFlightGenerations.delete(date))
-}
-
-/**
- * Garantit la séance du jour : si aujourd'hui est un jour d'entraînement et qu'aucune
- * séance n'existe, lance la génération en arrière-plan. Renvoie l'existante ou null.
- */
-export function ensureTodaySession(): Session | null {
-  const settingsRow = getSettings()
-  const today = todayIso(settingsRow.timezone)
-
-  if (!settingsRow.trainingDays.includes(isoWeekday(today))) return null
-
-  const existing = findSessionByDate(today)
-  if (existing) return existing
-
-  // Séance supprimée/déplacée volontairement : on ne recrée rien sans demande explicite.
-  if (isDateDismissed(today)) return null
-
-  const { anthropicApiKey } = useRuntimeConfig()
-  if (!anthropicApiKey) {
-    console.warn("[generation] Jour d'entraînement mais clé API absente : séance non générée.")
-    return null
-  }
-
-  triggerGeneration(today)
-  return null
 }

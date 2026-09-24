@@ -89,6 +89,7 @@ export function applySessionCheckIn(
     intention: checkIn.intention,
   })
   const persisted = persistAdaptation(row, result)
+  invalidatePreparedSessions()
   return {
     ...persisted,
     checkIn: persistedCheckIn,
@@ -132,6 +133,8 @@ export function adaptSessionDuringWorkout(
       },
     )
   }
+
+  invalidatePreparedSessions()
 
   return {
     ...persisted,

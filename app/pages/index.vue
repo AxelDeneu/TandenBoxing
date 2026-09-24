@@ -54,6 +54,7 @@ const ADJUST_SUGGESTIONS = [
 ]
 
 const session = computed(() => data.value?.session ?? null)
+const generationJob = computed(() => data.value?.generationJob ?? null)
 const totalSeconds = computed(() =>
   session.value ? estimateSessionSeconds(session.value.structure) : 0,
 )
@@ -136,6 +137,25 @@ async function generateNow() {
     toast.add({ title: 'Séance en préparation…', icon: 'i-lucide-loader-circle', color: 'info' })
   } catch (e) {
     notifyError(e)
+  } finally {
+    regenLoading.value = false
+  }
+}
+
+async function retryGeneration() {
+  if (!generationJob.value) return
+  regenLoading.value = true
+  try {
+    await $fetch('/api/generation-jobs/' + generationJob.value.id + '/retry', { method: 'POST' })
+    await refresh()
+    toast.add({
+      title: 'Relance enregistrée',
+      description: 'La génération reprend avec un nouveau budget de tentatives.',
+      icon: 'i-lucide-refresh-cw',
+      color: 'info',
+    })
+  } catch (e) {
+    notifyError(e, 'Relance impossible')
   } finally {
     regenLoading.value = false
   }
@@ -277,14 +297,48 @@ function closeSwapDialog(): void {
       <!-- Séance prête -->
       <template v-if="session">
         <UAlert
+          v-if="session.fallbackUsed"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-shield-check"
+          title="Séance de secours locale"
+          description="Le fournisseur était indisponible : cette séance déterministe a été validée avec tes contraintes et préférences actives."
+        />
+
+        <UAlert
           v-if="data.generating"
           color="info"
           variant="soft"
           icon="i-lucide-loader-circle"
-          title="Régénération en cours…"
-          description="Ta séance va se mettre à jour dans un instant."
+          :title="
+            generationJob?.status === 'retry_scheduled'
+              ? 'Nouvelle tentative programmée…'
+              : 'Régénération en cours…'
+          "
+          :description="
+            'Tentative ' +
+            (generationJob?.attemptCount ?? 0) +
+            '/' +
+            (generationJob?.maxAttempts ?? 3) +
+            '. Ta séance va se mettre à jour dès que possible.'
+          "
           :ui="{ icon: 'animate-spin' }"
         />
+
+        <UAlert
+          v-else-if="generationJob?.status === 'failed'"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-triangle-alert"
+          title="La régénération a échoué"
+          :description="generationJob.actionableMessage ?? 'La séance actuelle reste disponible.'"
+        >
+          <template #actions>
+            <UButton size="sm" color="warning" :loading="regenLoading" @click="retryGeneration">
+              Relancer explicitement
+            </UButton>
+          </template>
+        </UAlert>
 
         <UCard>
           <div class="space-y-3">
@@ -368,7 +422,13 @@ function closeSwapDialog(): void {
           <div>
             <h2 class="text-lg font-semibold">Séance en préparation…</h2>
             <p class="text-sm text-muted">
-              Ton coach IA compose ta séance du jour. Ça prend une vingtaine de secondes.
+              Tentative {{ generationJob?.attemptCount ?? 0 }}/{{ generationJob?.maxAttempts ?? 3 }}
+              ·
+              {{
+                generationJob?.status === 'retry_scheduled'
+                  ? 'Nouvel essai programmé avec backoff.'
+                  : 'Le job durable est en cours de traitement.'
+              }}
             </p>
           </div>
         </div>
@@ -385,7 +445,6 @@ function closeSwapDialog(): void {
             </p>
           </div>
           <UButton
-            v-if="data.hasApiKey"
             color="primary"
             icon="i-lucide-sparkles"
             :loading="regenLoading"
@@ -407,7 +466,6 @@ function closeSwapDialog(): void {
             </p>
           </div>
           <UButton
-            v-if="data.hasApiKey"
             color="neutral"
             variant="soft"
             icon="i-lucide-plus"
@@ -419,29 +477,26 @@ function closeSwapDialog(): void {
         </div>
       </UCard>
 
-      <!-- Clé API manquante -->
-      <UAlert
-        v-else-if="!data.hasApiKey"
-        color="warning"
-        variant="soft"
-        icon="i-lucide-key-round"
-        title="Clé API manquante"
-        description="Configure NUXT_ANTHROPIC_API_KEY côté serveur pour générer automatiquement tes séances."
-      />
-
       <!-- Échec de génération -->
       <UCard v-else>
         <div class="flex flex-col items-center gap-3 py-8 text-center">
           <UIcon name="i-lucide-triangle-alert" class="size-10 text-amber-400" />
           <div>
             <h2 class="text-lg font-semibold">Séance indisponible</h2>
-            <p class="text-sm text-muted">La génération n'a pas abouti. Réessaie.</p>
+            <p class="text-sm text-muted">
+              {{
+                generationJob?.actionableMessage ??
+                (!data.hasApiKey
+                  ? 'Le fournisseur n’est pas configuré et le fallback local n’a pas pu satisfaire les contraintes.'
+                  : 'La génération n’a pas abouti. Relance-la explicitement.')
+              }}
+            </p>
           </div>
           <UButton
             color="primary"
             icon="i-lucide-refresh-cw"
             :loading="regenLoading"
-            @click="generateNow"
+            @click="generationJob?.status === 'failed' ? retryGeneration() : generateNow()"
           >
             Réessayer
           </UButton>
@@ -465,7 +520,6 @@ function closeSwapDialog(): void {
           color="neutral"
           variant="soft"
           icon="i-lucide-wand-sparkles"
-          :disabled="!data.hasApiKey"
           @click="setDialog('custom', true)"
         >
           Séance sur mesure

@@ -30,6 +30,12 @@ export default defineEventHandler((event) => {
       .map((row) => [row.date, row]),
   )
   const plansByDate = new Map(listPlansBetween(from, to).map((plan) => [plan.date, plan]))
+  const jobsByDate = new Map(
+    listLatestGenerationJobsBetween(from, to).map((job) => [
+      job.sessionDate,
+      toPublicGenerationJob(job),
+    ]),
+  )
 
   const days = []
   for (let date = from; date <= to; date = addDays(date, 1)) {
@@ -61,6 +67,7 @@ export default defineEventHandler((event) => {
             note: plan.note,
           }
         : null,
+      generationJob: jobsByDate.get(date) ?? null,
     })
   }
 

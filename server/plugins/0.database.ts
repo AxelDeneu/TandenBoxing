@@ -22,4 +22,7 @@ export default defineNitroPlugin(() => {
   }
 
   ensureSingletons(db)
+
+  // La file est en base : récupère les leases expirés et reprend les jobs après un redémarrage.
+  resumeGenerationJobs()
 })

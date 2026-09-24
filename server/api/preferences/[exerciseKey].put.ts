@@ -15,5 +15,11 @@ export default defineEventHandler(async (event) => {
   if (!exerciseKey || !parsed.success) {
     throw createError({ statusCode: 400, statusMessage: 'Préférence invalide.' })
   }
-  return replaceLearnedExercisePreference(exerciseKey, parsed.data.action, parsed.data.reasonCode)
+  const updated = replaceLearnedExercisePreference(
+    exerciseKey,
+    parsed.data.action,
+    parsed.data.reasonCode,
+  )
+  invalidatePreparedSessions()
+  return updated
 })

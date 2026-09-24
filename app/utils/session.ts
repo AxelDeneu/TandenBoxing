@@ -1,6 +1,7 @@
 // Helpers de séance partagés (validés/testés dans shared/), ré-exportés pour l'auto-import client.
 import type { WorkoutSession } from '~~/shared/session-schema'
 import type { SkillId } from '~~/shared/curriculum'
+import type { PublicGenerationJob } from '~~/shared/generation-jobs'
 
 export type {
   Exercise,
@@ -36,6 +37,10 @@ export interface ApiSession {
   estimatedDurationMin: number
   structure: WorkoutSession
   aiModel: string
+  generationSource: string
+  generationContextHash: string | null
+  fallbackUsed: boolean
+  reusedFromSessionId: number | null
   generatedAt: number | null
   startedAt: number | null
   completedAt: number | null
@@ -51,6 +56,7 @@ export interface TodayResponse {
   /** La séance du jour a été volontairement supprimée/déplacée : pas de régénération auto. */
   dismissed: boolean
   generating: boolean
+  generationJob: PublicGenerationJob | null
 }
 
 /** Intention de planification (séance pas forcément encore générée). */
@@ -85,6 +91,7 @@ export interface CalendarDay {
   isTrainingDay: boolean
   session: CalendarSession | null
   plan: ApiSessionPlan | null
+  generationJob: PublicGenerationJob | null
 }
 
 export const CATEGORY_META = {

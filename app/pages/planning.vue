@@ -53,6 +53,7 @@ const selectedDay = computed<CalendarDay | null>(() => {
       isTrainingDay: false,
       session: null,
       plan: null,
+      generationJob: null,
     }
   )
 })

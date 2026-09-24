@@ -20,5 +20,7 @@ export default defineEventHandler(async (event) => {
   if (!parsed.success) {
     throw createError({ statusCode: 400, statusMessage: 'Profil invalide.' })
   }
-  return updateProfile(parsed.data)
+  const updated = updateProfile(parsed.data)
+  invalidatePreparedSessions()
+  return updated
 })

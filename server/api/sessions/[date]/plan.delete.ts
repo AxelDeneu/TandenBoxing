@@ -2,5 +2,6 @@
 export default defineEventHandler((event) => {
   const date = getRouterParam(event, 'date')!
   deletePlan(date)
+  invalidatePreparedSessions()
   return { ok: true }
 })

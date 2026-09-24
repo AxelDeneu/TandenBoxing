@@ -15,5 +15,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Poids invalide.' })
   }
   const date = parsed.data.date ?? todayIso(getSettings().timezone)
-  return upsertWeight(date, parsed.data.weightKg)
+  const updated = upsertWeight(date, parsed.data.weightKg)
+  invalidatePreparedSessions()
+  return updated
 })

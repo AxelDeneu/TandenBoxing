@@ -29,17 +29,6 @@ export default defineEventHandler(async (event) => {
   const { date, category, focus, requestedSkillId, customFocus, durationMin, note, generateNow } =
     parsed.data
 
-  if (generateNow) {
-    const { anthropicApiKey } = useRuntimeConfig()
-    if (!anthropicApiKey) {
-      throw createError({
-        statusCode: 500,
-        statusMessage:
-          'Clé API Anthropic manquante. Renseigne NUXT_ANTHROPIC_API_KEY dans l’environnement.',
-      })
-    }
-  }
-
   const { plan, generating } = planSession(date, {
     category,
     focus,

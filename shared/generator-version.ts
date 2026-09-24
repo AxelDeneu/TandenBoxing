@@ -10,9 +10,9 @@ import { EXERCISE_PREFERENCE_VERSION } from './exercise-preferences'
 import { SESSION_AUTOREGULATION_VERSION } from './session-autoregulation'
 
 export const GENERATOR_VERSIONS = {
-  planner: 'generation-service/v3',
+  planner: 'generation-service/v4',
   policy: SESSION_POLICY_VERSION,
-  prompt: 'session-system-prompt/v3',
+  prompt: 'session-system-prompt/v4',
   outputContract: 'workout-session-schema/v1',
   preferences: EXERCISE_PREFERENCE_VERSION,
   autoregulation: SESSION_AUTOREGULATION_VERSION,
