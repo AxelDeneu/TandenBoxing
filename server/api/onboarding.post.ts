@@ -34,5 +34,7 @@ export default defineEventHandler(async (event) => {
   const { disableCron } = useRuntimeConfig()
   if (!disableCron) scheduleGeneration()
 
+  invalidatePreparedSessions()
+
   return { ok: true }
 })

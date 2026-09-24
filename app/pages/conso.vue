@@ -25,6 +25,15 @@ function formatCost(usd: number | null): string {
   return `${usd.toFixed(2).replace('.', ',')} $`
 }
 
+function formatRate(rate: number | null): string {
+  return rate === null ? '—' : `${Math.round(rate * 100)} %`
+}
+
+function formatLatency(milliseconds: number | null): string {
+  if (milliseconds === null) return '—'
+  return `${(milliseconds / 1000).toFixed(1).replace('.', ',')} s`
+}
+
 /** Part des tokens d'entrée servis par le cache (économie effective). */
 const cacheHitRate = computed(() => {
   const t = data.value?.total
@@ -90,6 +99,45 @@ const cacheHitRate = computed(() => {
         description="Le prompt système est mis en cache : les appels rapprochés (régénération, ajustement, remplacement) coûtent moins cher."
       />
 
+      <UCard>
+        <template #header>
+          <div>
+            <h2 class="text-sm font-semibold">Fiabilité de la génération durable</h2>
+            <p class="mt-1 text-xs text-muted">
+              Jobs persistants, réutilisation validée et fallback déterministe.
+            </p>
+          </div>
+        </template>
+        <dl class="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
+          <div class="rounded-lg bg-elevated p-3">
+            <dt class="text-xs text-dimmed">Réussite</dt>
+            <dd class="mt-1 text-lg font-bold">
+              {{ formatRate(data.generation.successRate) }}
+            </dd>
+          </div>
+          <div class="rounded-lg bg-elevated p-3">
+            <dt class="text-xs text-dimmed">Latence moyenne</dt>
+            <dd class="mt-1 text-lg font-bold">
+              {{ formatLatency(data.generation.averageLatencyMs) }}
+            </dd>
+          </div>
+          <div class="rounded-lg bg-elevated p-3">
+            <dt class="text-xs text-dimmed">Réutilisation</dt>
+            <dd class="mt-1 text-lg font-bold">{{ formatRate(data.generation.reuseRate) }}</dd>
+          </div>
+          <div class="rounded-lg bg-elevated p-3">
+            <dt class="text-xs text-dimmed">Fallback</dt>
+            <dd class="mt-1 text-lg font-bold">{{ formatRate(data.generation.fallbackRate) }}</dd>
+          </div>
+        </dl>
+        <p class="mt-3 text-xs text-muted">
+          {{ data.generation.succeededJobs }} réussis · {{ data.generation.failedJobs }} échoués ·
+          {{ data.generation.activeJobs }} actifs · {{ data.generation.modelCalls }} appels modèle ·
+          {{ formatTokens(data.generation.inputTokens + data.generation.outputTokens) }} tokens ·
+          {{ formatCost(data.generation.estimatedCostUsd) }}
+        </p>
+      </UCard>
+
       <!-- Par modèle -->
       <UCard v-if="data.byModel.length">
         <template #header>
@@ -103,8 +151,8 @@ const cacheHitRate = computed(() => {
           >
             <span class="font-medium">{{ modelLabel(row.model) }}</span>
             <span class="text-muted">
-              {{ row.calls }} appels ·
-              {{ formatTokens(row.inputTokens + row.outputTokens) }} tokens ·
+              {{ row.calls }} appels · {{ formatTokens(row.inputTokens + row.outputTokens) }} tokens
+              ·
               <span class="text-default">{{ formatCost(row.costUsd) }}</span>
             </span>
           </div>
@@ -131,7 +179,10 @@ const cacheHitRate = computed(() => {
         </div>
       </UCard>
 
-      <p v-if="!data.total.calls" class="rounded-xl border border-default p-6 text-center text-muted">
+      <p
+        v-if="!data.total.calls"
+        class="rounded-xl border border-default p-6 text-center text-muted"
+      >
         Aucun appel au modèle enregistré pour l'instant.
       </p>
     </template>

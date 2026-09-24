@@ -10,6 +10,7 @@ const toast = useToast()
 
 const session = computed(() => props.day?.session ?? null)
 const plan = computed(() => props.day?.plan ?? null)
+const generationJob = computed(() => props.day?.generationJob ?? null)
 const date = computed(() => props.day?.date ?? '')
 
 const showReschedule = ref(false)
@@ -124,6 +125,25 @@ async function generateFromPlan() {
   }
 }
 
+async function retryGeneration() {
+  if (!generationJob.value) return
+  loading.value = true
+  try {
+    await $fetch('/api/generation-jobs/' + generationJob.value.id + '/retry', { method: 'POST' })
+    toast.add({
+      title: 'Relance enregistrée',
+      description: 'Le job durable reprend avec trois nouvelles tentatives maximum.',
+      icon: 'i-lucide-refresh-cw',
+      color: 'info',
+    })
+    emit('changed')
+  } catch (e) {
+    notifyError(e)
+  } finally {
+    loading.value = false
+  }
+}
+
 async function deleteSession() {
   loading.value = true
   try {
@@ -161,6 +181,45 @@ async function deletePlan() {
   >
     <template #body>
       <div v-if="day" class="space-y-5">
+        <UAlert
+          v-if="
+            generationJob && ['queued', 'running', 'retry_scheduled'].includes(generationJob.status)
+          "
+          color="info"
+          variant="soft"
+          icon="i-lucide-loader-circle"
+          :title="
+            generationJob.status === 'retry_scheduled'
+              ? 'Nouvelle tentative programmée'
+              : 'Génération persistante en cours'
+          "
+          :description="
+            'Tentative ' +
+            generationJob.attemptCount +
+            '/' +
+            generationJob.maxAttempts +
+            '. Le traitement reprendra automatiquement après un redémarrage.'
+          "
+          :ui="{ icon: 'animate-spin' }"
+        />
+
+        <UAlert
+          v-else-if="generationJob?.status === 'failed'"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-triangle-alert"
+          title="Génération en échec"
+          :description="
+            generationJob.actionableMessage ?? 'Relance la génération lorsque tu es prêt.'
+          "
+        >
+          <template #actions>
+            <UButton size="sm" color="warning" :loading="loading" @click="retryGeneration">
+              Relancer explicitement
+            </UButton>
+          </template>
+        </UAlert>
+
         <!-- ── Une séance existe ── -->
         <template v-if="session">
           <div class="space-y-3">

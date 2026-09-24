@@ -14,9 +14,11 @@ export default defineEventHandler(() => {
   const session = findSessionByDate(today) ?? null
   const dismissed = !session && isDateDismissed(today)
 
-  if (!session && !dismissed && isTrainingDay && hasApiKey) {
-    triggerGeneration(today)
+  if (!session && !dismissed && isTrainingDay) {
+    requestGenerationJob(today, { source: 'automatic' })
   }
+
+  const generationJob = generationJobForDate(today)
 
   return {
     date: today,
@@ -26,5 +28,6 @@ export default defineEventHandler(() => {
     session,
     dismissed,
     generating: isGenerating(today),
+    generationJob,
   }
 })

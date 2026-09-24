@@ -5,5 +5,6 @@ export default defineEventHandler((event) => {
     throw createError({ statusCode: 400, statusMessage: 'Préférence invalide.' })
   }
   forgetLearnedExercisePreference(exerciseKey)
+  invalidatePreparedSessions()
   return { ok: true }
 })

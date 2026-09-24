@@ -57,6 +57,13 @@
       "when": 1790195251028,
       "tag": "0007_glossy_harrier",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790254623393,
+      "tag": "0008_typical_prodigy",
+      "breakpoints": true
     }
   ]
 }

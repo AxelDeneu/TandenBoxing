@@ -12,5 +12,6 @@ export default defineEventHandler((event) => {
     exerciseFeedback: listExerciseFeedbackBySession(row.id),
     checkIn: findSessionCheckIn(row.id) ?? null,
     adaptations: listSessionAdaptations(row.id),
+    generationJob: generationJobForDate(date),
   }
 })

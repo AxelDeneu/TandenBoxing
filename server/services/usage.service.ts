@@ -56,6 +56,37 @@ export function getUsageStats() {
     addToBucket(byKind[row.kind]!, row)
   }
 
+  const generationRows = listGenerationJobs(1_000)
+  const terminalJobs = generationRows.filter((job) => ['succeeded', 'failed'].includes(job.status))
+  const succeededJobs = terminalJobs.filter((job) => job.status === 'succeeded')
+  const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
+  const generation = {
+    jobs: generationRows.length,
+    activeJobs: generationRows.filter((job) =>
+      ['queued', 'running', 'retry_scheduled'].includes(job.status),
+    ).length,
+    succeededJobs: succeededJobs.length,
+    failedJobs: terminalJobs.filter((job) => job.status === 'failed').length,
+    successRate: terminalJobs.length ? succeededJobs.length / terminalJobs.length : null,
+    averageLatencyMs: succeededJobs.length
+      ? Math.round(sum(succeededJobs.map((job) => job.durationMs ?? 0)) / succeededJobs.length)
+      : null,
+    modelCalls: sum(generationRows.map((job) => job.modelCalls)),
+    inputTokens: sum(generationRows.map((job) => job.inputTokens)),
+    outputTokens: sum(generationRows.map((job) => job.outputTokens)),
+    estimatedCostUsd: generationRows.every((job) => job.estimatedCostUsd !== null)
+      ? sum(generationRows.map((job) => job.estimatedCostUsd ?? 0))
+      : null,
+    reusedJobs: succeededJobs.filter((job) => job.reuseKind !== 'none').length,
+    reuseRate: succeededJobs.length
+      ? succeededJobs.filter((job) => job.reuseKind !== 'none').length / succeededJobs.length
+      : null,
+    fallbackJobs: succeededJobs.filter((job) => job.fallbackUsed).length,
+    fallbackRate: succeededJobs.length
+      ? succeededJobs.filter((job) => job.fallbackUsed).length / succeededJobs.length
+      : null,
+  }
+
   return {
     total,
     thisMonth,
@@ -63,5 +94,6 @@ export function getUsageStats() {
     byModel: Object.entries(byModel).map(([model, bucket]) => ({ model, ...bucket })),
     byKind: Object.entries(byKind).map(([kind, bucket]) => ({ kind, ...bucket })),
     recent: rows.slice(0, 20),
+    generation,
   }
 }

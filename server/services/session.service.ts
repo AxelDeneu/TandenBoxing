@@ -64,6 +64,7 @@ export function planSession(
   })
   // Planification explicite : la date redevient éligible à la génération automatique.
   undismissDate(date)
+  invalidatePreparedSessions()
   if (payload.generateNow) triggerGeneration(date, { regenerate: true })
   return { plan, generating: isGenerating(date) }
 }
@@ -118,7 +119,18 @@ export function rescheduleSession(
     }
   }
 
-  return { session: row ? updateSessionByDate(date, { date: newDate }) : null, plan: planFinal }
+  const result = {
+    session: row
+      ? updateSessionByDate(date, {
+          date: newDate,
+          generationSource: 'model',
+          generationContextHash: null,
+        })
+      : null,
+    plan: planFinal,
+  }
+  invalidatePreparedSessions()
+  return result
 }
 
 /** Supprime définitivement une séance (et son feedback, en cascade) ainsi que son intention. */
@@ -129,6 +141,7 @@ export function deleteSession(date: string): void {
   deletePlan(date)
   // Suppression volontaire : la génération auto ne doit pas recréer la séance.
   dismissDate(date)
+  invalidatePreparedSessions()
 }
 
 /** Retire un exercice (ou son bloc s'il devient vide). */
@@ -158,6 +171,7 @@ export function removeExerciseFromSession(
   recordSessionExercisePreference(row, blockIndex, exerciseIndex, 'removed', reasonCode, {
     source: 'session_edit',
   })
+  invalidatePreparedSessions()
   return updated
 }
 
@@ -198,6 +212,7 @@ export async function replaceExerciseInSession(
     source: 'session_edit',
     replacement,
   })
+  invalidatePreparedSessions()
   return updated
 }
 
@@ -240,12 +255,14 @@ export function skipSession(date: string, reason: string | null): Session {
   // Le statut change : les recommandations en cache sont périmées.
   clearRecommendationCache()
 
-  return updateSessionByDate(date, {
+  const updated = updateSessionByDate(date, {
     status: 'skipped',
     startedAt: null,
     completedAt: null,
     actualDurationSec: null,
   })
+  invalidatePreparedSessions()
+  return updated
 }
 
 /** Enregistre le feedback d'une séance et la clôt. */
@@ -290,9 +307,11 @@ export function submitFeedback(date: string, payload: FeedbackPayload): Session 
   // L'historique vient de changer : les recommandations en cache sont périmées.
   if (payload.completed) clearRecommendationCache()
 
-  return updateSessionByDate(date, {
+  const updated = updateSessionByDate(date, {
     status: payload.completed ? 'completed' : row.status,
     completedAt: payload.completed ? new Date() : row.completedAt,
     actualDurationSec: payload.actualDurationSec ?? row.actualDurationSec,
   })
+  invalidatePreparedSessions()
+  return updated
 }

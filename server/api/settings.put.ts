@@ -35,5 +35,6 @@ export default defineEventHandler(async (event) => {
     scheduleGeneration()
   }
 
+  invalidatePreparedSessions()
   return updated
 })

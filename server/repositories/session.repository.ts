@@ -1,4 +1,4 @@
-import { desc, eq, gte } from 'drizzle-orm'
+import { and, desc, eq, gte } from 'drizzle-orm'
 import type { NewSession, Session } from '../database/schema'
 
 /** Accès aux séances. */
@@ -22,6 +22,21 @@ export function listCompletedSessions(): Session[] {
 
 export function listSessionsSince(dateFrom: string): Session[] {
   return useDatabase().select().from(sessions).where(gte(sessions.date, dateFrom)).all()
+}
+
+export function listPreparedSessions(dateFrom: string): Session[] {
+  return useDatabase()
+    .select()
+    .from(sessions)
+    .where(
+      and(
+        gte(sessions.date, dateFrom),
+        eq(sessions.generationSource, 'prefetch'),
+        eq(sessions.status, 'generated'),
+      ),
+    )
+    .orderBy(sessions.date)
+    .all()
 }
 
 /** Insère ou remplace la séance d'une date (réinitialise l'état d'exécution en cas de régénération). */

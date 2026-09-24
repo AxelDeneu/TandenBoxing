@@ -7,6 +7,8 @@ timer à intervalles avec audio, et suivi de progression.
 ## Fonctionnalités
 
 - **Séance quotidienne générée par IA** à 7h (cron interne), adaptée à ta progression.
+- **Génération durable** : jobs SQLite idempotents, reprise après redémarrage, retries bornés,
+  réutilisation validée, préparation anticipée et fallback local déterministe.
 - **Structure complète** : échauffement → technique (combos numérotés) → cardio → retour au calme.
 - **Timer à intervalles** plein écran : bips + cloche de round, anneau de progression, hors-ligne.
 - **Feedback détaillé** par exercice → l'IA ajuste les séances suivantes.
@@ -84,6 +86,9 @@ Les profils déterministes sont les suivants :
 La somme des budgets en secondes est toujours égale à la durée cible. La fatigue, une reprise
 après interruption ou une contrainte explicite réduisent l'intensité et interdisent les nouvelles
 techniques, sans écraser les choix explicites de catégorie, focus ou durée.
+
+Le fonctionnement de la file persistante, des clés de contexte, de la réutilisation, du fallback et
+des métriques est détaillé dans [docs/generation-durable.md](./docs/generation-durable.md).
 
 Avant le démarrage, le check-in structure le temps disponible, l'énergie, les courbatures, une
 éventuelle douleur localisée et l'intention du jour. Les règles versionnées recalculent localement
