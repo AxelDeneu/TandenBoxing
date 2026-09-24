@@ -735,6 +735,7 @@ export async function generateSessionForDateDetailed(
     if (reusable) {
       metrics.reuseKind = 'session'
       metrics.reusedBlockCount = reusable.structure.blocks.length
+      metrics.policyCompliant = true
       return {
         session: persistResolvedSession(
           date,
@@ -852,6 +853,7 @@ export async function generateSessionForDateDetailed(
       },
       onInvalid: (attempt, violations) => logGenerationViolations(date, attempt, violations),
       correct: async (candidate, violations) => {
+        metrics.policyCorrectionCount += 1
         const correctionPrompt = [
           `La séance candidate ci-dessous échoue à des règles métier obligatoires.`,
           `Effectue UNE correction ciblée : conserve le contenu valide et modifie uniquement ce qui est nécessaire pour supprimer toutes les violations.`,
@@ -922,6 +924,8 @@ export async function generateSessionForDateDetailed(
     throw error
   }
 
+  metrics.policyCompliant = true
+
   return {
     session: persistResolvedSession(date, session, context, settingsRow, {
       source: options.source === 'prefetch' ? 'prefetch' : 'model',
@@ -967,6 +971,7 @@ export function generateDeterministicFallbackForDate(
   }
   const metrics = emptyGenerationRunMetrics()
   metrics.fallbackUsed = true
+  metrics.policyCompliant = true
   metrics.reusedBlockCount = built.reusedBlockCount
   metrics.reuseKind = built.reusedBlockCount ? 'blocks' : 'none'
   return {

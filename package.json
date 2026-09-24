@@ -22,7 +22,8 @@
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
-    "eval:generator": "tsx evaluation/cli.ts"
+    "eval:generator": "tsx evaluation/cli.ts",
+    "eval:generator:real": "tsx evaluation/real/cli.ts"
   },
   "engines": {
     "node": ">=26"

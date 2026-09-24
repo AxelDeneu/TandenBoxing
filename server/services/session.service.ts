@@ -224,6 +224,7 @@ export interface FeedbackPayload {
   enjoyment: number | null
   comment: string | null
   actualDurationSec: number | null
+  skippedBlockCount: number | null
   exercises: {
     blockIndex: number
     exerciseIndex: number
@@ -250,6 +251,7 @@ export function skipSession(date: string, reason: string | null): Session {
     enjoyment: null,
     comment: reason,
     actualDurationSec: null,
+    skippedBlockCount: null,
   })
 
   // Le statut change : les recommandations en cache sont périmées.
@@ -277,6 +279,7 @@ export function submitFeedback(date: string, payload: FeedbackPayload): Session 
     enjoyment: payload.enjoyment,
     comment: payload.comment,
     actualDurationSec: payload.actualDurationSec,
+    skippedBlockCount: payload.skippedBlockCount,
   })
 
   const feedbackRows: NewExerciseFeedback[] = payload.exercises.map((e) => ({

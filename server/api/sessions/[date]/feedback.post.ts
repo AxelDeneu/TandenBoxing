@@ -9,6 +9,7 @@ const schema = z.object({
   enjoyment: z.number().int().min(1).max(5).nullable().default(null),
   comment: z.string().max(2000).nullable().default(null),
   actualDurationSec: z.number().int().min(0).max(36_000).nullable().default(null),
+  skippedBlockCount: z.number().int().min(0).max(100).nullable().default(null),
   exercises: z
     .array(
       z.object({

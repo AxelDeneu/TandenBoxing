@@ -9,6 +9,8 @@ timer à intervalles avec audio, et suivi de progression.
 - **Séance quotidienne générée par IA** à 7h (cron interne), adaptée à ta progression.
 - **Génération durable** : jobs SQLite idempotents, reprise après redémarrage, retries bornés,
   réutilisation validée, préparation anticipée et fallback local déterministe.
+- **Évaluation versionnée** : garde-fou déterministe en CI, campagnes fournisseur réelles budgétées
+  et télémétrie agrégée sans texte libre sensible.
 - **Structure complète** : échauffement → technique (combos numérotés) → cardio → retour au calme.
 - **Timer à intervalles** plein écran : bips + cloche de round, anneau de progression, hors-ligne.
 - **Feedback détaillé** par exercice → l'IA ajuste les séances suivantes.
@@ -46,15 +48,16 @@ npm run dev                 # http://localhost:3000
 
 ## Scripts utiles
 
-| Script                   | Rôle                                                      |
-| ------------------------ | --------------------------------------------------------- |
-| `npm run dev`            | Serveur de développement                                  |
-| `npm run build`          | Build de production (`.output`)                           |
-| `npm run db:generate`    | Génère une migration depuis le schéma Drizzle             |
-| `npm run db:migrate`     | Applique les migrations                                   |
-| `npm run db:studio`      | Explorateur de base Drizzle                               |
-| `npm run icons`          | Régénère les icônes PWA depuis `public/icon.svg`          |
-| `npm run eval:generator` | Évalue hors ligne le générateur sur le corpus synthétique |
+| Script                        | Rôle                                                          |
+| ----------------------------- | ------------------------------------------------------------- |
+| `npm run dev`                 | Serveur de développement                                      |
+| `npm run build`               | Build de production (`.output`)                               |
+| `npm run db:generate`         | Génère une migration depuis le schéma Drizzle                 |
+| `npm run db:migrate`          | Applique les migrations                                       |
+| `npm run db:studio`           | Explorateur de base Drizzle                                   |
+| `npm run icons`               | Régénère les icônes PWA depuis `public/icon.svg`              |
+| `npm run eval:generator`      | Évalue hors ligne le générateur sur le corpus synthétique     |
+| `npm run eval:generator:real` | Compare manuellement un fournisseur réel sous budgets stricts |
 
 ## Structure
 
@@ -89,6 +92,8 @@ techniques, sans écraser les choix explicites de catégorie, focus ou durée.
 
 Le fonctionnement de la file persistante, des clés de contexte, de la réutilisation, du fallback et
 des métriques est détaillé dans [docs/generation-durable.md](./docs/generation-durable.md).
+Le protocole de comparaison réelle et la boucle de télémétrie sont détaillés dans
+[docs/evaluation-reelle.md](./docs/evaluation-reelle.md).
 
 Avant le démarrage, le check-in structure le temps disponible, l'énergie, les courbatures, une
 éventuelle douleur localisée et l'intention du jour. Les règles versionnées recalculent localement

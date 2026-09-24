@@ -20,6 +20,7 @@ const {
   totalSeconds,
   elapsedSeconds,
   activeSeconds,
+  skippedBlockCount,
   phaseProgress,
   overallProgress,
   savedSnapshot,
@@ -312,7 +313,7 @@ function acknowledgeSafetyNotice(): void {
           size="xl"
           color="primary"
           icon="i-lucide-clipboard-check"
-          :to="`/seance/${date}/feedback?duree=${Math.round(activeSeconds)}`"
+          :to="`/seance/${date}/feedback?duree=${Math.round(activeSeconds)}&blocsIgnores=${skippedBlockCount}`"
         >
           Noter la séance
         </UButton>

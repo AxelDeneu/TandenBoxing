@@ -52,6 +52,7 @@ function createTables(): void {
       'cache_read_tokens INTEGER DEFAULT 0 NOT NULL, estimated_cost_usd REAL, duration_ms INTEGER,',
       "provider_latency_ms INTEGER DEFAULT 0 NOT NULL, reuse_kind TEXT DEFAULT 'none' NOT NULL,",
       'reused_block_count INTEGER DEFAULT 0 NOT NULL, fallback_used INTEGER DEFAULT false NOT NULL,',
+      'policy_correction_count INTEGER, policy_compliant INTEGER,',
       'queued_at INTEGER DEFAULT (unixepoch()) NOT NULL, started_at INTEGER, completed_at INTEGER,',
       'failed_at INTEGER, created_at INTEGER DEFAULT (unixepoch()) NOT NULL,',
       'updated_at INTEGER DEFAULT (unixepoch()) NOT NULL);',

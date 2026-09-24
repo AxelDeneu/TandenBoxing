@@ -1,4 +1,4 @@
-import { desc, eq, lt } from 'drizzle-orm'
+import { and, desc, eq, gte, lt, lte } from 'drizzle-orm'
 import type {
   NewSession,
   NewSessionAdaptationRow,
@@ -69,5 +69,14 @@ export function listSessionAdaptationsBefore(date: string, limit = 20): SessionA
     .where(lt(sessionAdaptations.sessionDate, date))
     .orderBy(desc(sessionAdaptations.sessionDate), desc(sessionAdaptations.id))
     .limit(limit)
+    .all()
+}
+
+export function listSessionAdaptationsBetween(from: string, to: string): SessionAdaptationRow[] {
+  return useDatabase()
+    .select()
+    .from(sessionAdaptations)
+    .where(and(gte(sessionAdaptations.sessionDate, from), lte(sessionAdaptations.sessionDate, to)))
+    .orderBy(sessionAdaptations.sessionDate, sessionAdaptations.id)
     .all()
 }

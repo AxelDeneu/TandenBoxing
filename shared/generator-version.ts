@@ -8,11 +8,13 @@
 import { SESSION_POLICY_VERSION } from './session-policy'
 import { EXERCISE_PREFERENCE_VERSION } from './exercise-preferences'
 import { SESSION_AUTOREGULATION_VERSION } from './session-autoregulation'
+import { WORKOUT_PRESCRIPTION_VERSION } from './workout-prescription'
 
 export const GENERATOR_VERSIONS = {
   planner: 'generation-service/v4',
   policy: SESSION_POLICY_VERSION,
   prompt: 'session-system-prompt/v4',
+  prescription: WORKOUT_PRESCRIPTION_VERSION,
   outputContract: 'workout-session-schema/v1',
   preferences: EXERCISE_PREFERENCE_VERSION,
   autoregulation: SESSION_AUTOREGULATION_VERSION,
@@ -22,6 +24,7 @@ export type GeneratorVersions = {
   readonly planner: string
   readonly policy: string
   readonly prompt: string
+  readonly prescription: string
   readonly outputContract: string
   readonly preferences: string
   readonly autoregulation: string

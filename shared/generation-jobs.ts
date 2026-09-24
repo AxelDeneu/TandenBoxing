@@ -29,6 +29,10 @@ export interface GenerationRunMetrics {
   reuseKind: GenerationReuseKind
   reusedBlockCount: number
   fallbackUsed: boolean
+  /** Nombre d'appels modèle supplémentaires déclenchés par une violation de politique. */
+  policyCorrectionCount: number
+  /** La sortie finalement persistée a franchi toutes les règles bloquantes. */
+  policyCompliant: boolean
 }
 
 export interface PublicGenerationJob {
@@ -76,5 +80,7 @@ export function emptyGenerationRunMetrics(): GenerationRunMetrics {
     reuseKind: 'none',
     reusedBlockCount: 0,
     fallbackUsed: false,
+    policyCorrectionCount: 0,
+    policyCompliant: false,
   }
 }

@@ -79,3 +79,17 @@ npm run eval:generator -- \
 
 Le module exporte `aiEvaluationAdapter` conforme à `AiEvaluationAdapter`. Le runner refuse
 une activation sans budget et rejette un coût déclaré supérieur au plafond.
+
+## Fournisseur réel et résultats observés
+
+La commande payante et non déterministe est volontairement séparée :
+
+```bash
+npm run eval:generator:real -- --help
+```
+
+Elle exige une baseline, une seed, une température et six budgets avant tout appel, puis produit
+une archive JSON et Markdown avec provenance, sorties, comparaison par scénario et variance. Elle
+n'est jamais exécutée par la CI de pull request. Le protocole complet, les seuils d'alerte, la
+télémétrie agrégée, les limites statistiques et la mise à jour du corpus sont documentés dans
+[`docs/evaluation-reelle.md`](../docs/evaluation-reelle.md).

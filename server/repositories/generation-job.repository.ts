@@ -267,6 +267,8 @@ export function completeGenerationJob(
         reuseKind: result.reuseKind,
         reusedBlockCount: result.reusedBlockCount,
         fallbackUsed: result.fallbackUsed,
+        policyCorrectionCount: result.policyCorrectionCount,
+        policyCompliant: result.policyCompliant,
         updatedAt: now,
       })
       .where(eq(generationJobs.id, job.id))

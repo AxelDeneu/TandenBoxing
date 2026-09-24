@@ -12,6 +12,7 @@ interface TimerSnapshot {
   index: number
   remaining: number
   activeSeconds: number
+  skippedBlockIndexes: number[]
   /** Nombre de phases à la sauvegarde : une régénération de la séance invalide l'instantané. */
   phasesCount: number
   savedAt: number
@@ -32,6 +33,7 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
   const finished = ref(phases.length === 0)
   /** Temps réellement passé à s'entraîner, pauses exclues. Préremplit le feedback. */
   const activeSeconds = ref(0)
+  const skippedBlockIndexes = ref<number[]>([])
   /** Séance interrompue retrouvée au montage ; repasse à `null` dès que l'utilisateur a tranché. */
   const savedSnapshot = ref<TimerSnapshot | null>(null)
 
@@ -106,6 +108,7 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
           index: index.value,
           remaining: remaining.value,
           activeSeconds: activeSeconds.value,
+          skippedBlockIndexes: skippedBlockIndexes.value,
           phasesCount: phases.length,
           savedAt: Date.now(),
         } satisfies TimerSnapshot),
@@ -131,6 +134,9 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
     index.value = snap.index
     remaining.value = snap.remaining
     activeSeconds.value = snap.activeSeconds
+    skippedBlockIndexes.value = Array.isArray(snap.skippedBlockIndexes)
+      ? [...new Set(snap.skippedBlockIndexes.filter(Number.isInteger))]
+      : []
     finished.value = false
     lastBeepSecond = -1
     savedSnapshot.value = null
@@ -255,6 +261,14 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
     else start()
   }
   function skip() {
+    const phase = current.value
+    if (
+      phase?.kind === 'work' &&
+      remaining.value > 0 &&
+      !skippedBlockIndexes.value.includes(phase.blockIndex)
+    ) {
+      skippedBlockIndexes.value.push(phase.blockIndex)
+    }
     if (index.value + 1 >= phases.length) {
       finish()
       return
@@ -278,6 +292,7 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
     remaining.value = phases[0]?.seconds ?? 0
     running.value = false
     activeSeconds.value = 0
+    skippedBlockIndexes.value = []
     clearSnapshot()
   }
   function stop() {
@@ -342,6 +357,7 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
     totalSeconds,
     elapsedSeconds,
     activeSeconds,
+    skippedBlockCount: computed(() => skippedBlockIndexes.value.length),
     phaseProgress,
     overallProgress,
     savedSnapshot,
