@@ -124,14 +124,16 @@ describe("interface d'intégration du planner", () => {
     expect(guidance.newSkillId).not.toBe('crochets')
   })
 
-  it('autorise une cible explicite bloquée avec intensité et pédagogie adaptées', () => {
+  it('adapte une cible explicite bloquée vers un prérequis éligible sans la forcer', () => {
     const progression = buildSkillProgression(TODAY, [])
     const guidance = buildSkillPrescriptionGuidance(progression, {
       requestedSkillId: 'combinaisons_base',
     })
 
     expect(guidance.mode).toBe('explicit_adapted')
-    expect(guidance.newSkillId).toBe('combinaisons_base')
+    expect(guidance.requestedSkillId).toBe('combinaisons_base')
+    expect(guidance.targetDecision).toBe('adapted')
+    expect(guidance.newSkillId).toBe('posture_garde')
     expect(guidance.intensityCap).toBe(2)
     expect(guidance.pedagogy).toBe('decomposition_fondamentaux')
     expect(guidance.missingPrerequisiteIds).toEqual(['un_deux', 'crochets', 'sorties_angle'])
@@ -143,8 +145,28 @@ describe("interface d'intégration du planner", () => {
     )
     expect(prescription.intensity).toBe(2)
     expect(prescription.maxNewTechniques).toBe(1)
-    expect(prescription.skillSelection.newSkillId).toBe('combinaisons_base')
+    expect(prescription.skillSelection.requestedSkillId).toBe('combinaisons_base')
+    expect(prescription.skillSelection.targetDecision).toBe('adapted')
+    expect(prescription.skillSelection.newSkillId).toBe('posture_garde')
     expect(prescription.skillSelection.consolidatedSkillIds).toEqual([])
+  })
+
+  it('accepte une cible éligible mais la reporte si la prescription interdit toute nouveauté', () => {
+    const progression = buildSkillProgression(TODAY, [])
+    const guidance = buildSkillPrescriptionGuidance(progression, {
+      requestedSkillId: 'posture_garde',
+    })
+
+    expect(guidance.targetDecision).toBe('accepted')
+    expect(guidance.newSkillId).toBe('posture_garde')
+
+    const prescription = applySkillGuidanceToPrescription(
+      { intensity: 1, maxNewTechniques: 0 },
+      guidance,
+    )
+    expect(prescription.skillSelection.newSkillId).toBeNull()
+    expect(prescription.skillSelection.targetDecision).toBe('deferred')
+    expect(prescription.skillSelection.coachNoteFacts.join(' ')).toContain('reportée')
   })
 
   it('ajoute les consolidations au contrat du planner et interdit une nouveauté implicite', () => {

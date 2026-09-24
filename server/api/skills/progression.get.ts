@@ -1,3 +1,5 @@
+import { presentSkillProgression } from '../../../shared/skill-progression-api'
+
 /** GET /api/skills/progression?date=YYYY-MM-DD — état calculé du curriculum débutant. */
 export default defineEventHandler((event) => {
   const raw = getQuery(event).date
@@ -6,5 +8,5 @@ export default defineEventHandler((event) => {
       ? raw
       : todayIso(getSettings().timezone)
 
-  return getSkillProgression(date)
+  return presentSkillProgression(getSkillProgression(date))
 })

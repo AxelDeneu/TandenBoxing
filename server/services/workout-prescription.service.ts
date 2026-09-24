@@ -7,8 +7,10 @@ import { sessionCategory, workoutFocus } from '../../shared/session-schema'
 import {
   applySkillGuidanceToPrescription,
   buildSkillGuidanceForFocus,
+  buildSkillPrescriptionGuidance,
   type SkillProgressionSnapshot,
 } from '../../shared/skill-mastery'
+import { getCurriculumSkill, isSkillId, type SkillId } from '../../shared/curriculum'
 import {
   buildVarietyMemory,
   buildWorkoutVarietyConstraints,
@@ -18,6 +20,7 @@ import {
 type PrescriptionOverrides = Omit<WorkoutPrescriptionRequest, 'category' | 'focus'> & {
   category?: string | null
   focus?: string | null
+  requestedSkillId?: SkillId | null
 }
 
 /**
@@ -52,7 +55,25 @@ export function buildWorkoutPrescription(
   )
 
   const rawCategory = overrides.category !== undefined ? overrides.category : sessionPlan?.category
-  const rawFocus = overrides.focus !== undefined ? overrides.focus : sessionPlan?.focus
+  const rawRequestedSkillId =
+    overrides.requestedSkillId !== undefined
+      ? overrides.requestedSkillId
+      : sessionPlan?.requestedSkillId
+  const requestedSkillId = isSkillId(rawRequestedSkillId) ? rawRequestedSkillId : null
+  const preliminaryGuidance = requestedSkillId
+    ? buildSkillPrescriptionGuidance(progression, { requestedSkillId })
+    : null
+  const focusSkillId =
+    preliminaryGuidance?.newSkillId ??
+    preliminaryGuidance?.consolidatedSkillIds[0] ??
+    requestedSkillId
+  const targetFocus = focusSkillId
+    ? getCurriculumSkill(focusSkillId).focuses.find(
+        (focus) => workoutFocus.safeParse(focus).success,
+      )
+    : null
+  const rawFocus =
+    overrides.focus !== undefined ? overrides.focus : (sessionPlan?.focus ?? targetFocus)
   const parsedCategory = sessionCategory.safeParse(rawCategory)
   const parsedFocus = workoutFocus.safeParse(rawFocus)
   const recentAdaptations = listSessionAdaptationsBefore(date).map((adaptation) => ({
@@ -93,7 +114,7 @@ export function buildWorkoutPrescription(
 
   const skillAwarePrescription = applySkillGuidanceToPrescription(
     prescription,
-    buildSkillGuidanceForFocus(progression, prescription.focus),
+    buildSkillGuidanceForFocus(progression, prescription.focus, { requestedSkillId }),
     progression.curriculumVersion,
   )
   const varietyMemory = buildVarietyMemory(

@@ -1,11 +1,12 @@
 import { z } from 'zod'
-import { sessionCategory, workoutFocus } from '../../../shared/session-schema'
+import { sessionCategory, skillIdSchema, workoutFocus } from '../../../shared/session-schema'
 
 const schema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   /** Null = catégorie laissée au choix de l'IA (séance sur mesure). */
   category: sessionCategory.nullish(),
   focus: workoutFocus.nullish(),
+  requestedSkillId: skillIdSchema.nullish(),
   /** Thème libre (ex : « pectoraux », « biceps ») ; prime sur `focus`. */
   customFocus: z.string().trim().min(1).max(200).nullish(),
   /** Durée voulue pour cette séance (minutes) ; null = durée cible des réglages. */
@@ -16,7 +17,7 @@ const schema = z.object({
 
 /**
  * POST /api/sessions/plan
- * Body: { date, category?, focus?, customFocus?, durationMin?, note?, generateNow? }
+ * Body: { date, category?, focus?, requestedSkillId?, customFocus?, durationMin?, note?, generateNow? }
  * Enregistre l'intention de séance (sur mesure : tous les champs sont optionnels).
  * La génération complète a lieu le jour J, ou immédiatement (en arrière-plan) si `generateNow`.
  */
@@ -25,7 +26,8 @@ export default defineEventHandler(async (event) => {
   if (!parsed.success) {
     throw createError({ statusCode: 400, statusMessage: 'Planification invalide.' })
   }
-  const { date, category, focus, customFocus, durationMin, note, generateNow } = parsed.data
+  const { date, category, focus, requestedSkillId, customFocus, durationMin, note, generateNow } =
+    parsed.data
 
   if (generateNow) {
     const { anthropicApiKey } = useRuntimeConfig()
@@ -41,10 +43,12 @@ export default defineEventHandler(async (event) => {
   const { plan, generating } = planSession(date, {
     category,
     focus,
+    requestedSkillId,
     customFocus,
     durationMin,
     note,
     generateNow,
   })
-  return { ok: true, plan, generating }
+  const skillSelection = requestedSkillId ? buildWorkoutPrescription(date).skillSelection : null
+  return { ok: true, plan, generating, skillSelection }
 })

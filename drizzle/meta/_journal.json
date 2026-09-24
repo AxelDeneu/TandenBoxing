@@ -50,6 +50,13 @@
       "when": 1790167833570,
       "tag": "0006_naive_iron_lad",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790195251028,
+      "tag": "0007_glossy_harrier",
+      "breakpoints": true
     }
   ]
 }

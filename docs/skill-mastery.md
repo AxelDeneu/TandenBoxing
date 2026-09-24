@@ -62,9 +62,11 @@ séances restent servies telles quelles par l'API et l'interface grâce au champ
 `buildSkillPrescriptionGuidance` est la frontière d'intégration. Il renvoie un unique
 `newSkillId`, les `consolidatedSkillIds` explicites et les faits de justification. En mode
 automatique, il ne choisit que parmi les nouveautés éligibles. Une demande utilisateur explicite
-reste autorisée ; si la cible n'est pas acquise, le contrat impose une intensité plafonnée à 2 et
-une pédagogie de décomposition des fondamentaux. Il ne calcule ni catégorie, ni durée, ni budgets
-de blocs : ces décisions restent la responsabilité exclusive du planner de #2.
+est une suggestion, jamais un contournement : une cible éligible est acceptée, une cible déjà vue
+est consolidée, et une cible bloquée est adaptée vers son premier prérequis éligible ou reportée.
+Le contrat expose `requestedSkillId` et `targetDecision`, plafonne à 2 l'intensité d'une adaptation
+et impose une pédagogie de décomposition des fondamentaux. Il ne calcule ni catégorie, ni durée,
+ni budgets de blocs : ces décisions restent la responsabilité exclusive du planner de #2.
 `buildSkillGuidanceForFocus` limite en plus nouveautés et consolidations au focus que ce planner
 a déjà choisi.
 
@@ -79,3 +81,16 @@ exposé par `GET /api/skills/progression` et injecté dans le contexte de géné
 `progressionCompetences`. Le même contexte persiste aussi `prescription.skillSelection` : les états
 `acquis` et `en_consolidation` restent explicables dans le snapshot, tandis que `newSkillId`
 identifie sans ambiguïté la compétence nouvellement introduite pour cette séance.
+
+## Contrat d'affichage du parcours (#14)
+
+`presentSkillProgression` transforme le snapshot côté serveur en quatre états d'interface :
+acquise, en consolidation, prochaine/éligible et bloquée. Le contrat fournit aussi les libellés du
+curriculum, les critères, les prérequis manquants et l'explication de ciblage. Le frontend valide
+et affiche ce contrat sans réimplémenter les seuils ni le graphe de prérequis.
+
+Une intention planifiée peut persister `requestedSkillId`. Au moment de la prescription, le moteur
+reste seul responsable de son acceptation, de son adaptation ou de son report selon les prérequis,
+le focus, la charge et la sécurité. Le contexte enregistré avec la séance permet ensuite au détail
+d'afficher les compétences travaillées, consolidées et introduites, y compris pour expliquer une
+cible non retenue. Les anciennes séances sans cette trace restent affichables avec un état partiel.

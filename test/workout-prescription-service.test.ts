@@ -76,6 +76,26 @@ describe('buildWorkoutPrescription — intégration de la maîtrise', () => {
     expect(prescription.skillSelection.newSkillId).toBeNull()
   })
 
+  it('transforme une cible bloquée en prochaine étape sûre et l’explique', () => {
+    const progression = buildSkillProgression(DATE, [])
+
+    const prescription = buildWorkoutPrescription(
+      DATE,
+      { category: 'apprentissage', requestedSkillId: 'combinaisons_base' },
+      progression,
+    )
+
+    expect(prescription.focus).toBe('fondations')
+    expect(prescription.intensity).toBe(2)
+    expect(prescription.skillSelection).toMatchObject({
+      requestedSkillId: 'combinaisons_base',
+      targetDecision: 'adapted',
+      newSkillId: 'posture_garde',
+      pedagogy: 'decomposition_fondamentaux',
+    })
+    expect(prescription.skillSelection.coachNoteFacts.join(' ')).toContain('jamais forcée')
+  })
+
   it('sélectionne explicitement les acquis à consolider sans augmenter l’intensité adaptée', () => {
     const progression = buildSkillProgression(DATE, [
       exposure('posture_garde', '2026-09-01'),

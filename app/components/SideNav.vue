@@ -4,6 +4,7 @@ const route = useRoute()
 
 const items = [
   { label: "Aujourd'hui", icon: 'i-lucide-dumbbell', to: '/' },
+  { label: 'Progression', icon: 'i-lucide-route', to: '/progression' },
   { label: 'Planning', icon: 'i-lucide-calendar-days', to: '/planning' },
   { label: 'Historique', icon: 'i-lucide-history', to: '/historique' },
   { label: 'Glossaire', icon: 'i-lucide-book-open', to: '/glossaire' },
@@ -31,7 +32,8 @@ function isActive(to: string) {
         v-for="item in items"
         :key="item.to"
         :to="item.to"
-        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors"
+        :aria-current="isActive(item.to) ? 'page' : undefined"
+        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         :class="
           isActive(item.to)
             ? 'bg-elevated text-primary'

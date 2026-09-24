@@ -246,7 +246,12 @@ function closeSwapDialog(): void {
         ]"
         :content="{ align: 'end' }"
       >
-        <UButton icon="i-lucide-ellipsis-vertical" color="neutral" variant="ghost" />
+        <UButton
+          icon="i-lucide-ellipsis-vertical"
+          color="neutral"
+          variant="ghost"
+          aria-label="Actions de la séance"
+        />
       </UDropdownMenu>
     </header>
 
@@ -443,8 +448,18 @@ function closeSwapDialog(): void {
         </div>
       </UCard>
 
-      <!-- Points d'entrée : séance sur mesure du jour + planification. -->
+      <!-- Points d'entrée : progression, séance sur mesure du jour + planification. -->
       <div class="grid grid-cols-2 gap-2">
+        <UButton
+          block
+          class="col-span-2"
+          color="primary"
+          variant="soft"
+          icon="i-lucide-route"
+          to="/progression"
+        >
+          Voir mon parcours de progression
+        </UButton>
         <UButton
           block
           color="neutral"

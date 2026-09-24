@@ -58,6 +58,11 @@ export function buildSessionPrompt(input: SessionPromptInput): string {
           prescription.skillSelection.newSkillId
             ? `- Seule nouvelle compétence autorisée : ${prescription.skillSelection.newSkillId}.`
             : `- Aucune nouvelle compétence ne doit être introduite.`,
+          ...(prescription.skillSelection.requestedSkillId
+            ? [
+                `- Cible suggérée par l'utilisateur : ${prescription.skillSelection.requestedSkillId}; décision du planner : ${prescription.skillSelection.targetDecision}.`,
+              ]
+            : []),
           `- Compétences à consolider : ${prescription.skillSelection.consolidatedSkillIds.join(', ') || 'aucune'}.`,
           `- Pédagogie prescrite : ${prescription.skillSelection.pedagogy}.`,
           ...prescription.skillSelection.coachNoteFacts.map(

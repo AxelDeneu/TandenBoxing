@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { ApiSession, SessionCategory } from '~/utils/session'
+import type { SessionPedagogicalIntent } from '~~/shared/session-pedagogy'
 
 interface SessionDetail extends ApiSession {
+  pedagogicalIntent: SessionPedagogicalIntent
   feedback: {
     completed: boolean
     overallDifficulty: number | null
@@ -31,6 +33,13 @@ const isCompleted = computed(() => data.value?.status === 'completed')
 const isSkipped = computed(() => data.value?.status === 'skipped')
 // Un vrai feedback (séance faite) — à distinguer du marqueur d'une séance sautée (completed=false).
 const ratedFeedback = computed(() => (data.value?.feedback?.completed ? data.value.feedback : null))
+
+const TARGET_DECISION_META = {
+  automatic: { label: 'Choix automatique', color: 'neutral' },
+  accepted: { label: 'Cible retenue', color: 'success' },
+  adapted: { label: 'Cible adaptée', color: 'warning' },
+  deferred: { label: 'Cible reportée', color: 'neutral' },
+} as const
 
 const showReschedule = ref(false)
 const showDelete = ref(false)
@@ -163,6 +172,81 @@ async function deleteSession() {
             </span>
           </div>
         </div>
+      </UCard>
+
+      <UCard aria-labelledby="pedagogical-intent-title">
+        <template #header>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="pedagogical-intent-title" class="flex items-center gap-2 text-sm font-semibold">
+              <UIcon name="i-lucide-route" class="size-4 text-primary" />
+              Intention pédagogique
+            </h2>
+            <UBadge
+              v-if="data.pedagogicalIntent.target"
+              :color="TARGET_DECISION_META[data.pedagogicalIntent.target.decision].color"
+              variant="soft"
+            >
+              {{ TARGET_DECISION_META[data.pedagogicalIntent.target.decision].label }}
+            </UBadge>
+          </div>
+        </template>
+
+        <p class="text-sm text-muted">{{ data.pedagogicalIntent.summary }}</p>
+
+        <dl class="mt-4 grid gap-3 sm:grid-cols-3">
+          <div class="rounded-lg bg-elevated p-3">
+            <dt class="text-xs font-medium text-dimmed">Travaillées</dt>
+            <dd class="mt-1 text-sm">
+              {{
+                data.pedagogicalIntent.worked.map((skill) => skill.label).join(', ') ||
+                'Non renseignées'
+              }}
+            </dd>
+          </div>
+          <div class="rounded-lg bg-elevated p-3">
+            <dt class="text-xs font-medium text-dimmed">Consolidées</dt>
+            <dd class="mt-1 text-sm">
+              {{
+                data.pedagogicalIntent.consolidated.map((skill) => skill.label).join(', ') ||
+                'Aucune cible explicite'
+              }}
+            </dd>
+          </div>
+          <div class="rounded-lg bg-elevated p-3">
+            <dt class="text-xs font-medium text-dimmed">Introduites</dt>
+            <dd class="mt-1 text-sm">
+              {{
+                data.pedagogicalIntent.introduced.map((skill) => skill.label).join(', ') ||
+                'Aucune nouveauté'
+              }}
+            </dd>
+          </div>
+        </dl>
+
+        <UAlert
+          v-if="data.pedagogicalIntent.missingPrerequisites.length"
+          class="mt-4"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-lock-keyhole"
+          title="Prérequis renforcés avant la cible"
+          :description="
+            data.pedagogicalIntent.missingPrerequisites.map((skill) => skill.label).join(', ')
+          "
+        />
+
+        <ul
+          v-if="data.pedagogicalIntent.facts.length"
+          class="mt-4 list-disc space-y-1 pl-5 text-sm text-muted"
+          aria-label="Explications de la prescription"
+        >
+          <li v-for="fact in data.pedagogicalIntent.facts" :key="fact">{{ fact }}</li>
+        </ul>
+
+        <p v-if="data.pedagogicalIntent.partial" class="mt-4 text-xs text-dimmed">
+          Détail partiel : cette séance a été générée avant l’enregistrement de l’intention de
+          progression.
+        </p>
       </UCard>
 
       <!-- Séance sautée : rappel de la raison -->

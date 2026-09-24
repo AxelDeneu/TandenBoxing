@@ -128,7 +128,7 @@ ${CURRICULUM_GUIDE}
 - Le contexte contient "progressionCompetences", calculé à partir des séances terminées et de leurs feedbacks. Utilise ses états, ses nouveautés éligibles et ses prérequis manquants ; ne déduis jamais la maîtrise du seul nombre de séances.
 - Sans demande explicite, n'introduis aucune compétence absente de "eligibleNewSkillIds" et respecte "prescription.maxNewTechniques".
 - "prescription.skillSelection" est la sélection finale : introduis uniquement "newSkillId", consolide "consolidatedSkillIds", respecte les prérequis manquants et la pédagogie prescrite.
-- Une demande explicite peut viser une compétence non acquise ou bloquée : conserve la cible, mais réduis l'intensité, décompose le geste et consolide ses prérequis au lieu de simuler un acquis.
+- "requestedSkillId" est une suggestion utilisateur et "targetDecision" la décision du planner. Si elle est adaptée ou reportée, n'introduis jamais la cible bloquée : suis uniquement "newSkillId" et "consolidatedSkillIds", puis explique l'adaptation dans "coachNote".
 - Renvoie TOUJOURS "category" ET "focus".
 
 MÉMOIRE & PROGRESSION
@@ -236,6 +236,7 @@ interface GenerationRequest {
   /** Null = catégorie laissée au choix de l'IA. */
   categorie: string | null
   focus: string | null
+  competenceCible: string | null
   /** Thème libre d'une séance sur mesure (ex : « pectoraux ») ; prime sur `focus`. */
   focusLibre: string | null
   note: string | null
@@ -461,6 +462,7 @@ export function buildGenerationContext(date: string): {
     context.demande = {
       categorie: plan.category,
       focus: plan.focus,
+      competenceCible: plan.requestedSkillId,
       focusLibre: plan.customFocus,
       note: plan.note,
     }
@@ -497,6 +499,7 @@ export async function generateSessionForDate(
     context.demande = {
       categorie: existing.category,
       focus: existing.focus,
+      competenceCible: context.demande?.competenceCible ?? null,
       focusLibre: context.demande?.focusLibre ?? null,
       note: context.demande?.note ?? null,
     }
@@ -505,6 +508,7 @@ export async function generateSessionForDate(
       {
         category: existing.category,
         focus: existing.focus,
+        requestedSkillId: context.prescription.skillSelection.requestedSkillId,
       },
       context.progressionCompetences,
     )

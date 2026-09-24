@@ -68,6 +68,8 @@ export interface SkillPrescriptionRequest {
 
 export interface SkillPrescriptionGuidance {
   mode: 'automatic' | 'explicit' | 'explicit_adapted'
+  requestedSkillId: SkillId | null
+  targetDecision: 'automatic' | 'accepted' | 'adapted' | 'deferred'
   /** Au plus une nouveauté, garantie par le type scalaire. */
   newSkillId: SkillId | null
   consolidatedSkillIds: SkillId[]
@@ -85,6 +87,8 @@ interface PlannerPrescriptionContract {
 
 export interface PrescriptionSkillSelection {
   curriculumVersion: number
+  requestedSkillId: SkillId | null
+  targetDecision: SkillPrescriptionGuidance['targetDecision']
   newSkillId: SkillId | null
   consolidatedSkillIds: SkillId[]
   missingPrerequisiteIds: SkillId[]
@@ -261,28 +265,72 @@ export function buildSkillPrescriptionGuidance(
 
   if (requested) {
     const mastery = progression.mastery[requested]
-    const needsAdaptation = mastery.state !== 'acquis'
-    const consolidatedSkillIds = [
-      ...(mastery.state === 'en_consolidation' ? [requested] : []),
-      ...mastery.missingPrerequisiteIds.filter(
-        (id) => progression.mastery[id].state === 'en_consolidation',
-      ),
-    ].slice(0, maxConsolidated)
+    const blocked = mastery.missingPrerequisiteIds.length > 0
+    const requestedInFocus = candidates.has(requested)
+    const eligible = progression.eligibleNewSkillIds.includes(requested)
+
+    const prerequisiteClosure = new Set<SkillId>()
+    const visitPrerequisites = (skillId: SkillId): void => {
+      for (const prerequisite of getCurriculumSkill(skillId).prerequisites) {
+        if (prerequisiteClosure.has(prerequisite)) continue
+        prerequisiteClosure.add(prerequisite)
+        visitPrerequisites(prerequisite)
+      }
+    }
+    visitPrerequisites(requested)
+
+    const eligiblePrerequisiteId = progression.eligibleNewSkillIds.find(
+      (id) => prerequisiteClosure.has(id) && candidates.has(id),
+    )
+    const newSkillId = blocked
+      ? (eligiblePrerequisiteId ?? null)
+      : mastery.state === 'nouveau' && eligible && requestedInFocus
+        ? requested
+        : null
+    const consolidatedSkillIds = (
+      blocked
+        ? progression.reviewSkillIds.filter(
+            (id) => prerequisiteClosure.has(id) && candidates.has(id),
+          )
+        : mastery.state !== 'nouveau' && requestedInFocus
+          ? [requested]
+          : []
+    ).slice(0, maxConsolidated)
+    const targetDecision = blocked
+      ? 'adapted'
+      : !requestedInFocus || (mastery.state === 'nouveau' && !eligible)
+        ? 'deferred'
+        : 'accepted'
+    const requestedLabel = getCurriculumSkill(requested).label
+    const prerequisiteLabels = mastery.missingPrerequisiteIds.map(
+      (id) => getCurriculumSkill(id).label,
+    )
     return {
-      mode: needsAdaptation ? 'explicit_adapted' : 'explicit',
-      newSkillId: mastery.state === 'nouveau' ? requested : null,
+      mode: targetDecision === 'accepted' ? 'explicit' : 'explicit_adapted',
+      requestedSkillId: requested,
+      targetDecision,
+      newSkillId,
       consolidatedSkillIds: [...new Set(consolidatedSkillIds)],
       missingPrerequisiteIds: mastery.missingPrerequisiteIds,
-      intensityCap: needsAdaptation ? 2 : null,
-      pedagogy: needsAdaptation ? 'decomposition_fondamentaux' : 'standard',
+      intensityCap: blocked ? 2 : null,
+      pedagogy: blocked ? 'decomposition_fondamentaux' : 'standard',
       coachNoteFacts: [
-        `${getCurriculumSkill(requested).label} : ${mastery.state} (${mastery.exposures} exposition(s)).`,
-        ...(mastery.missingPrerequisiteIds.length
+        `${requestedLabel} : ${mastery.state} (${mastery.exposures} exposition(s)).`,
+        ...(blocked
           ? [
-              `Prérequis à renforcer : ${mastery.missingPrerequisiteIds
-                .map((id) => getCurriculumSkill(id).label)
-                .join(', ')}.`,
+              `Cible non éligible, jamais forcée. Prérequis à renforcer : ${prerequisiteLabels.join(', ')}.`,
+              ...(eligiblePrerequisiteId
+                ? [
+                    `Adaptation sûre : introduire d’abord ${getCurriculumSkill(eligiblePrerequisiteId).label}.`,
+                  ]
+                : []),
             ]
+          : []),
+        ...(!requestedInFocus && !blocked
+          ? [`Cible reportée : elle ne correspond pas au focus prescrit pour cette séance.`]
+          : []),
+        ...(mastery.state === 'nouveau' && !eligible && !blocked
+          ? [`Cible reportée : le moteur ne la considère pas encore éligible.`]
           : []),
       ],
     }
@@ -294,6 +342,8 @@ export function buildSkillPrescriptionGuidance(
     .slice(0, maxConsolidated)
   return {
     mode: 'automatic',
+    requestedSkillId: null,
+    targetDecision: 'automatic',
     newSkillId,
     consolidatedSkillIds,
     missingPrerequisiteIds: [],
@@ -331,6 +381,20 @@ export function applySkillGuidanceToPrescription<T extends PlannerPrescriptionCo
   curriculumVersion: number = BEGINNER_CURRICULUM.version,
 ): SkillAwarePrescription<T> {
   const newSkillId = prescription.maxNewTechniques > 0 ? guidance.newSkillId : null
+  const newSkillDeferred = Boolean(guidance.requestedSkillId && guidance.newSkillId && !newSkillId)
+  const targetDecision = newSkillDeferred
+    ? guidance.consolidatedSkillIds.length
+      ? 'adapted'
+      : 'deferred'
+    : guidance.targetDecision
+  const coachNoteFacts = [
+    ...guidance.coachNoteFacts,
+    ...(newSkillDeferred
+      ? [
+          `La nouveauté ciblée est reportée par les contraintes de charge ou de sécurité de cette prescription.`,
+        ]
+      : []),
+  ]
 
   return {
     ...prescription,
@@ -341,11 +405,13 @@ export function applySkillGuidanceToPrescription<T extends PlannerPrescriptionCo
     maxNewTechniques: newSkillId ? Math.min(prescription.maxNewTechniques, 1) : 0,
     skillSelection: {
       curriculumVersion,
+      requestedSkillId: guidance.requestedSkillId,
+      targetDecision,
       newSkillId,
       consolidatedSkillIds: guidance.consolidatedSkillIds,
       missingPrerequisiteIds: guidance.missingPrerequisiteIds,
       pedagogy: guidance.pedagogy,
-      coachNoteFacts: guidance.coachNoteFacts,
+      coachNoteFacts,
     },
   }
 }

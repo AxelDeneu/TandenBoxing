@@ -1,11 +1,20 @@
 <script setup lang="ts">
 import { addMonths, monthGridDays, monthLabel, startOfMonth, todayIso } from '~~/shared/dates'
+import { getCurriculumSkill, isSkillId } from '~~/shared/curriculum'
 import type { CalendarDay, TodayResponse } from '~/utils/session'
 
 useHead({ title: 'Planning' })
 
 /** Repli SSR-stable tant que le fuseau réglé par l'utilisateur n'est pas connu. */
 const FALLBACK_TZ = 'Europe/Paris'
+const route = useRoute()
+const routeTarget = computed(() => {
+  const value = route.query.targetSkillId
+  return isSkillId(value) ? value : null
+})
+const routeTargetLabel = computed(() =>
+  routeTarget.value ? getCurriculumSkill(routeTarget.value).label : null,
+)
 
 // Même clé que la page d'accueil : la date du jour vient du fuseau réglé côté serveur.
 const { data: todayData } = await useFetch<TodayResponse>('/api/sessions/today', {
@@ -89,6 +98,15 @@ function goToday() {
       </div>
     </header>
 
+    <UAlert
+      v-if="routeTargetLabel"
+      color="primary"
+      variant="soft"
+      icon="i-lucide-route"
+      title="Compétence cible sélectionnée"
+      :description="`Choisis le jour de ta prochaine séance pour suggérer « ${routeTargetLabel} » au planner. Il vérifiera les prérequis et les contraintes de sécurité.`"
+    />
+
     <USkeleton v-if="!days" class="h-96 w-full rounded-xl" />
     <SessionCalendar
       v-else
@@ -104,6 +122,11 @@ function goToday() {
       Touche un jour pour planifier, générer ou modifier une séance.
     </p>
 
-    <DayPlanDrawer v-model:open="drawerOpen" :day="selectedDay" @changed="refresh" />
+    <DayPlanDrawer
+      v-model:open="drawerOpen"
+      :day="selectedDay"
+      :suggested-skill-id="routeTarget"
+      @changed="refresh"
+    />
   </div>
 </template>

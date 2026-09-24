@@ -1,5 +1,6 @@
 // Helpers de séance partagés (validés/testés dans shared/), ré-exportés pour l'auto-import client.
 import type { WorkoutSession } from '~~/shared/session-schema'
+import type { SkillId } from '~~/shared/curriculum'
 
 export type {
   Exercise,
@@ -58,6 +59,8 @@ export interface ApiSessionPlan {
   /** Null = catégorie laissée au choix de l'IA. */
   category: string | null
   focus: string | null
+  /** Cible suggérée au planner, qui peut l'accepter, l'adapter ou la reporter. */
+  requestedSkillId: SkillId | null
   /** Thème libre d'une séance sur mesure (ex : « pectoraux ») ; prime sur `focus`. */
   customFocus: string | null
   /** Durée voulue pour cette séance (minutes) ; null = durée cible des réglages. */
