@@ -1,4 +1,5 @@
 import type { ExercisePreferenceConstraints } from './exercise-preferences'
+import { equipmentPromptList, goalLabel } from './profile-personalization'
 import type { WorkoutPrescription } from './workout-prescription'
 import type { WorkoutVarietyConstraints } from './session-variety'
 import type { PrescriptionSkillSelection, SkillProgressionSnapshot } from './skill-mastery'
@@ -53,6 +54,8 @@ export function buildSessionPrompt(input: SessionPromptInput): string {
     `- Budgets de blocs à réaliser :`,
     ...positiveBudgets,
     `- N'introduis pas plus de ${prescription.maxNewTechniques} technique(s) nouvelle(s).`,
+    `- Objectif autoritaire : ${goalLabel(prescription.personalization.goal)} (${prescription.personalization.goalInfluence.dimension} reçoit +${prescription.personalization.goalInfluence.budgetDeltaSeconds} s par rapport au profil de catégorie).`,
+    `- Matériel autorisé : ${equipmentPromptList(prescription.personalization.equipment)}. Tout matériel absent est interdit.`,
     ...(prescription.skillSelection
       ? [
           prescription.skillSelection.newSkillId

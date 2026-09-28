@@ -11,9 +11,9 @@ import { SESSION_AUTOREGULATION_VERSION } from './session-autoregulation'
 import { WORKOUT_PRESCRIPTION_VERSION } from './workout-prescription'
 
 export const GENERATOR_VERSIONS = {
-  planner: 'generation-service/v4',
+  planner: 'generation-service/v5',
   policy: SESSION_POLICY_VERSION,
-  prompt: 'session-system-prompt/v4',
+  prompt: 'session-system-prompt/v5',
   prescription: WORKOUT_PRESCRIPTION_VERSION,
   outputContract: 'workout-session-schema/v1',
   preferences: EXERCISE_PREFERENCE_VERSION,

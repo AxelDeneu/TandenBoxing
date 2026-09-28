@@ -39,6 +39,13 @@ Toute modification du profil, des réglages, d'un plan, d'une préférence ou de
 les préparations dont l'empreinte a changé ; un changement de version de politique fait de même au
 redémarrage.
 
+La fin de l'onboarding est la frontière atomique des générations automatiques : ni l'ouverture de
+l'accueil, ni le rattrapage cron, ni le préchargement, ni la reprise d'un ancien job automatique ne
+peuvent appeler le fournisseur avant le commit du profil complet. Après ce commit, le premier job
+utilise déjà l'objectif et l'inventaire normalisés. Leur modification change l'empreinte, mais
+l'invalidation ne sélectionne que les séances futures de source `prefetch` encore au statut
+`generated` ; une séance démarrée, terminée ou générée explicitement est conservée.
+
 ## Observabilité
 
 La page **Réglages → Consommation IA** expose les taux de réussite, réutilisation et fallback, la

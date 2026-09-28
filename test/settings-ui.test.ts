@@ -30,4 +30,21 @@ describe('enregistrement des réglages dans l’interface', () => {
     })
     expect(request.mock.calls.map(([url]) => url)).toEqual(['/api/settings', '/api/profile'])
   })
+
+  it('transmet sans perte l’objectif structuré et l’inventaire du formulaire profil', async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true })
+    const profile = {
+      goal: 'technique',
+      equipment: ['sac-de-frappe', 'corde-a-sauter'],
+      fitnessLevel: 'actif',
+    }
+
+    await expect(saveSettingsForms(request, { targetDurationMin: 30 }, profile)).resolves.toEqual({
+      ok: true,
+    })
+    expect(request).toHaveBeenNthCalledWith(2, '/api/profile', {
+      method: 'PUT',
+      body: profile,
+    })
+  })
 })

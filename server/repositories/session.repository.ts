@@ -1,4 +1,4 @@
-import { and, desc, eq, gte } from 'drizzle-orm'
+import { and, desc, eq, gte, isNull } from 'drizzle-orm'
 import type { NewSession, Session } from '../database/schema'
 
 /** Accès aux séances. */
@@ -33,6 +33,8 @@ export function listPreparedSessions(dateFrom: string): Session[] {
         gte(sessions.date, dateFrom),
         eq(sessions.generationSource, 'prefetch'),
         eq(sessions.status, 'generated'),
+        isNull(sessions.startedAt),
+        isNull(sessions.completedAt),
       ),
     )
     .orderBy(sessions.date)

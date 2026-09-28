@@ -12,6 +12,7 @@ export const policyAdapter = createPolicyAdapter({
       requestedCategory: request?.category,
       requestedFocus: request?.focus,
       hasCustomFocus: Boolean(request?.customFocus),
+      availableEquipment: evaluationCase.context.profile.equipment,
     }).violations.map((violation) => ({ ...violation, message: violation.code }))
   },
   isBlocking: () => true,

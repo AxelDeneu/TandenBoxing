@@ -84,6 +84,8 @@ export function buildWorkoutPrescription(
   const prescription = planWorkoutPrescription({
     today: date,
     targetDurationMin: settingsRow.targetDurationMin,
+    goal: profileRow.goal,
+    equipment: profileRow.equipment,
     constraints: profileRow.constraints,
     recentAdaptations,
     history: completed.map((session) => {

@@ -16,6 +16,7 @@ import type {
   SessionAutoregulationConstraints,
   SessionIntention,
 } from '../../shared/session-autoregulation'
+import type { TrainingEquipment, TrainingGoal } from '../../shared/profile-personalization'
 import type {
   GenerationErrorKind,
   GenerationJobRequest,
@@ -69,7 +70,7 @@ export const profile = sqliteTable('profile', {
   discipline: text('discipline').notNull().default('boxe-anglaise'),
   /** debutant | intermediaire | avance */
   level: text('level').notNull().default('debutant'),
-  goal: text('goal').notNull().default('cardio-perte-de-gras'),
+  goal: text('goal').$type<TrainingGoal>().notNull().default('cardio-perte-de-gras'),
   /** sedentaire | actif | sportif */
   fitnessLevel: text('fitness_level'),
   /** Expérience libre (ex: « jamais fait de boxe », « cours il y a 2 ans »). */
@@ -77,9 +78,11 @@ export const profile = sqliteTable('profile', {
   age: integer('age'),
   heightCm: integer('height_cm'),
   equipment: text('equipment', { mode: 'json' })
-    .$type<string[]>()
+    .$type<TrainingEquipment[]>()
     .notNull()
-    .default(sql`'["gants","bandes"]'`),
+    .default(sql`'[]'`),
+  /** Null pour les profils créés avant le contrat objectif + matériel. */
+  personalizationVersion: text('personalization_version'),
   /** Contraintes / blessures / limitations (texte libre injecté dans le contexte IA). */
   constraints: text('constraints'),
   notes: text('notes'),

@@ -14,7 +14,7 @@ export default defineEventHandler(() => {
   const session = findSessionByDate(today) ?? null
   const dismissed = !session && isDateDismissed(today)
 
-  if (!session && !dismissed && isTrainingDay) {
+  if (s.onboardingCompleted && !session && !dismissed && isTrainingDay) {
     requestGenerationJob(today, { source: 'automatic' })
   }
 

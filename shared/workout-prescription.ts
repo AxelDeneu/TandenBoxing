@@ -1,6 +1,14 @@
 import { z } from 'zod'
 import { daysBetween } from './dates'
 import type { ExercisePreferenceConstraints } from './exercise-preferences'
+import {
+  TRAINING_GOAL_OPTIONS,
+  canonicalEquipment,
+  trainingEquipmentSchema,
+  trainingGoalSchema,
+  type TrainingEquipment,
+  type TrainingGoal,
+} from './profile-personalization'
 import { detectFatigue, recommendFocuses, type RecoHistoryEntry } from './recommendations'
 import {
   blockType,
@@ -14,7 +22,7 @@ import type { WorkoutVarietyConstraints } from './session-variety'
 import type { SkillAwarePrescription } from './skill-mastery'
 
 /** Version du contrat et des règles qui produisent la prescription avant tout appel modèle. */
-export const WORKOUT_PRESCRIPTION_VERSION = 'workout-prescription/v1'
+export const WORKOUT_PRESCRIPTION_VERSION = 'workout-prescription/v2'
 
 /** Budget en secondes pour chaque type de bloc générable. Une valeur nulle interdit le bloc. */
 export const blockBudgetsSchema = z.object({
@@ -40,6 +48,15 @@ export const workoutPrescriptionSchema = z.object({
   blockBudgets: blockBudgetsSchema,
   /** Nombre maximal de techniques réellement nouvelles à introduire dans la séance. */
   maxNewTechniques: z.number().int().min(0).max(2),
+  /** Choix du profil, normalisés avant toute génération et repris par la politique. */
+  personalization: z.object({
+    goal: trainingGoalSchema,
+    equipment: z.array(trainingEquipmentSchema),
+    goalInfluence: z.object({
+      dimension: z.enum(['cardio', 'technique', 'renforcement']),
+      budgetDeltaSeconds: z.number().int().nonnegative(),
+    }),
+  }),
   sources: z.object({
     category: z.enum(['explicit', 'recommendation']),
     focus: z.enum(['explicit', 'custom-focus', 'recommendation']),
@@ -80,6 +97,8 @@ export interface PrescriptionSkippedEntry {
 export interface WorkoutPrescriptionInput {
   today: string
   targetDurationMin: number
+  goal?: TrainingGoal
+  equipment?: readonly TrainingEquipment[]
   history: RecoHistoryEntry[]
   skipped?: PrescriptionSkippedEntry[]
   /** Contraintes connues du profil, sans interprétation par un modèle. */
@@ -125,9 +144,9 @@ export const WORKOUT_PRESCRIPTION_PROFILES: Record<SessionCategory, WorkoutPresc
     intensity: 3,
     blockWeights: {
       echauffement: 15,
-      technique: 35,
+      technique: 30,
       cardio: 15,
-      renforcement: 20,
+      renforcement: 25,
       retour_au_calme: 15,
     },
     maxNewTechniques: 0,
@@ -165,6 +184,39 @@ export const WORKOUT_PRESCRIPTION_PROFILES: Record<SessionCategory, WorkoutPresc
     },
     maxNewTechniques: 0,
   },
+}
+
+const GOAL_WEIGHT_SHIFT = 5
+
+/**
+ * Chaque objectif pilote une dimension mesurable du budget, sans pouvoir réintroduire un bloc
+ * interdit par la récupération. L'intention de sécurité de la catégorie reste prioritaire.
+ */
+function weightsForGoal(
+  profile: WorkoutPrescriptionProfile,
+  category: SessionCategory,
+  goal: TrainingGoal,
+): Record<BlockType, number> {
+  const weights = { ...profile.blockWeights }
+  if (category === 'recuperation') return weights
+
+  const target = TRAINING_GOAL_OPTIONS.find((option) => option.value === goal)!.dimension
+  const donors: BlockType[] =
+    target === 'technique'
+      ? ['cardio', 'renforcement']
+      : target === 'cardio'
+        ? ['technique', 'renforcement']
+        : ['technique', 'cardio']
+  let remaining = GOAL_WEIGHT_SHIFT
+  for (const donor of donors) {
+    const minimum = donor === 'technique' && category === 'apprentissage' ? 45 : 0
+    const moved = Math.min(remaining, Math.max(0, weights[donor] - minimum))
+    weights[donor] -= moved
+    weights[target] += moved
+    remaining -= moved
+    if (!remaining) break
+  }
+  return weights
 }
 
 const RECOVERY_CONSTRAINT =
@@ -277,6 +329,8 @@ export function planWorkoutPrescription(input: WorkoutPrescriptionInput): Workou
   }
 
   const profile = WORKOUT_PRESCRIPTION_PROFILES[category]
+  const goal = input.goal ?? 'cardio-perte-de-gras'
+  const goalWeights = weightsForGoal(profile, category, goal)
   const shouldReduceLoad = fatigued || constrained || returningAfterBreak
   const intensity = returningAfterBreak
     ? 1
@@ -286,14 +340,28 @@ export function planWorkoutPrescription(input: WorkoutPrescriptionInput): Workou
         ? Math.min(5, profile.intensity + 1)
         : profile.intensity
   const targetSeconds = targetDurationMin * 60
+  const blockBudgets = allocateBlockBudgets(targetSeconds, goalWeights)
+  const goalDimension = TRAINING_GOAL_OPTIONS.find((option) => option.value === goal)!.dimension
+  const baselineBudgets = allocateBlockBudgets(targetSeconds, profile.blockWeights)
 
   return workoutPrescriptionSchema.parse({
     category,
     focus,
     intensity,
     targetSeconds,
-    blockBudgets: allocateBlockBudgets(targetSeconds, profile.blockWeights),
+    blockBudgets,
     maxNewTechniques: shouldReduceLoad ? 0 : profile.maxNewTechniques,
+    personalization: {
+      goal,
+      equipment: canonicalEquipment(input.equipment ?? []),
+      goalInfluence: {
+        dimension: goalDimension,
+        budgetDeltaSeconds: Math.max(
+          0,
+          blockBudgets[goalDimension] - baselineBudgets[goalDimension],
+        ),
+      },
+    },
     sources: {
       category: request.category ? 'explicit' : 'recommendation',
       focus: request.focus ? 'explicit' : mappedCustomFocus ? 'custom-focus' : 'recommendation',

@@ -1,4 +1,5 @@
 import { GENERATOR_VERSIONS } from '../../shared/generator-version'
+import type { TrainingEquipment } from '../../shared/profile-personalization'
 import type {
   BlockType,
   Exercise,
@@ -37,6 +38,7 @@ function timedExercise(
   seconds: number,
   combo: string | null,
   maxWorkSec: number,
+  equipment: TrainingEquipment[] = [],
 ): Exercise {
   const rounds = Math.max(1, Math.ceil(seconds / maxWorkSec))
   const work = Math.floor(seconds / rounds)
@@ -48,6 +50,7 @@ function timedExercise(
     explanation: `Exécuter ${name.toLocaleLowerCase('fr')} avec une posture stable et une respiration régulière.`,
     tips: ['Garder une respiration fluide', 'Privilégier la précision'],
     commonMistakes: ['Accélérer au détriment de la posture'],
+    equipment,
     combo,
     comboExplanation: combo ? `Combinaison numérotée ${combo}` : null,
     intervals: { work, rest: 0, rounds },
@@ -110,6 +113,9 @@ function createReferenceSession(evaluationCase: EvaluationCase): WorkoutSession 
     ? null
     : (PROGRESSION_COMBO[evaluationCase.id] ?? FOCUS_COMBOS[focus][1])
   const suffix = evaluationCase.sequence?.id ?? evaluationCase.id
+  const bagMatrixCase = evaluationCase.id === 'personalization-bag-cardio'
+  const additionalEquipmentCase =
+    evaluationCase.id === 'personalization-additional-equipment-general'
 
   const firstCategory = recovery ? 'mobilite' : exerciseCategoryForBlock(firstType)
   const secondCategory = recovery ? 'recuperation' : exerciseCategoryForBlock(secondType)
@@ -130,22 +136,32 @@ function createReferenceSession(evaluationCase: EvaluationCase): WorkoutSession 
       firstType,
       recovery ? 'Mobilité active' : `Travail ${focus}`,
       timedExercise(
-        recovery ? `Mobilité douce ${suffix}` : `Technique ${focus} ${suffix}`,
+        recovery
+          ? `Mobilité douce ${suffix}`
+          : bagMatrixCase
+            ? `Directs cardio au sac de frappe ${suffix}`
+            : `Technique ${focus} ${suffix}`,
         firstCategory,
         firstMainSeconds,
         firstCategory === 'technique' ? techniqueCombo : null,
         maxWorkSec,
+        bagMatrixCase ? ['sac-de-frappe'] : [],
       ),
     ),
     block(
       secondType,
       recovery ? 'Respiration en mouvement' : `Consolidation ${category}`,
       timedExercise(
-        recovery ? `Déplacements légers ${suffix}` : `Consolidation ${focus} ${suffix}`,
+        recovery
+          ? `Déplacements légers ${suffix}`
+          : additionalEquipmentCase
+            ? `Tirage contrôlé avec élastique ${suffix}`
+            : `Consolidation ${focus} ${suffix}`,
         secondCategory,
         secondMainSeconds,
         secondCategory === 'technique' ? secondaryTechniqueCombo : null,
         maxWorkSec,
+        additionalEquipmentCase ? ['elastiques'] : [],
       ),
     ),
     block(

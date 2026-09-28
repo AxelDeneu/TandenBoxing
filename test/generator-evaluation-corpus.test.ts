@@ -29,6 +29,7 @@ describe('corpus synthétique du générateur', () => {
         'neglected-focus',
         'explicit-request',
         'progression',
+        'personalization',
       ]),
     )
     expect(
@@ -48,7 +49,7 @@ describe('corpus synthétique du générateur', () => {
 
   it('attribue le candidat à la politique active sans version en attente', () => {
     expect(candidateRun.versions).toEqual(GENERATOR_VERSIONS)
-    expect(GENERATOR_VERSIONS.policy).toBe('session-policy/v2')
+    expect(GENERATOR_VERSIONS.policy).toBe('session-policy/v3')
     expect(Object.values(GENERATOR_VERSIONS).some((version) => version.includes('pending'))).toBe(
       false,
     )
