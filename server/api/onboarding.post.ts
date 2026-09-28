@@ -1,4 +1,11 @@
 import { z } from 'zod'
+import {
+  generationScheduleSchema,
+  generationTimeSchema,
+  scheduleValidationMessage,
+  timezoneSchema,
+} from '../../shared/schedule'
+import { GenerationScheduleError, prepareGenerationSchedule } from '../utils/cron'
 
 const schema = z.object({
   fitnessLevel: z.enum(['sedentaire', 'actif', 'sportif']),
@@ -6,7 +13,8 @@ const schema = z.object({
   age: z.number().int().min(10).max(100).nullable().default(null),
   constraints: z.string().max(2000).nullable().default(null),
   trainingDays: z.array(z.number().int().min(1).max(7)).min(1),
-  generationTime: z.string().regex(/^\d{2}:\d{2}$/),
+  generationTime: generationTimeSchema,
+  timezone: timezoneSchema,
   targetDurationMin: z.number().int().min(10).max(120),
 })
 
@@ -14,25 +22,58 @@ const schema = z.object({
 export default defineEventHandler(async (event) => {
   const parsed = schema.safeParse(await readBody(event))
   if (!parsed.success) {
-    throw createError({ statusCode: 400, statusMessage: "Réponses d'onboarding invalides." })
+    throw createError({
+      statusCode: 400,
+      statusMessage: scheduleValidationMessage(parsed.error, "Réponses d'onboarding invalides."),
+    })
   }
   const b = parsed.data
 
-  updateProfile({
-    fitnessLevel: b.fitnessLevel,
-    experience: b.experience,
-    age: b.age,
-    constraints: b.constraints,
-  })
-  updateSettings({
-    trainingDays: [...new Set(b.trainingDays)].sort((x, y) => x - y),
+  const schedule = generationScheduleSchema.parse({
     generationTime: b.generationTime,
-    targetDurationMin: b.targetDurationMin,
-    onboardingCompleted: true,
+    timezone: b.timezone,
   })
-
   const { disableCron } = useRuntimeConfig()
-  if (!disableCron) scheduleGeneration()
+  let replacement: ReturnType<typeof prepareGenerationSchedule> | null = null
+  if (!disableCron) {
+    try {
+      replacement = prepareGenerationSchedule(schedule)
+    } catch (error) {
+      throw createError({
+        statusCode: 400,
+        statusMessage:
+          error instanceof GenerationScheduleError
+            ? error.message
+            : 'Impossible de planifier la génération avec ces réglages.',
+      })
+    }
+  }
+
+  try {
+    useDatabase().transaction(() => {
+      updateProfile({
+        fitnessLevel: b.fitnessLevel,
+        experience: b.experience,
+        age: b.age,
+        constraints: b.constraints,
+      })
+      updateSettings({
+        trainingDays: [...new Set(b.trainingDays)].sort((x, y) => x - y),
+        generationTime: schedule.generationTime,
+        timezone: schedule.timezone,
+        targetDurationMin: b.targetDurationMin,
+        onboardingCompleted: true,
+      })
+      replacement?.activate()
+    })
+  } catch (error) {
+    replacement?.rollback()
+    if (error instanceof GenerationScheduleError) {
+      throw createError({ statusCode: 400, statusMessage: error.message })
+    }
+    throw error
+  }
+  replacement?.finalize()
 
   invalidatePreparedSessions()
 
