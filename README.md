@@ -56,6 +56,7 @@ npm run dev                 # http://localhost:3000
 | `npm run db:migrate`          | Applique les migrations                                       |
 | `npm run db:studio`           | Explorateur de base Drizzle                                   |
 | `npm run icons`               | Régénère les icônes PWA depuis `public/icon.svg`              |
+| `npm run audit:prod`          | Bloque les avis hauts/critiques du graphe livré               |
 | `npm run eval:generator`      | Évalue hors ligne le générateur sur le corpus synthétique     |
 | `npm run eval:generator:real` | Compare manuellement un fournisseur réel sous budgets stricts |
 
@@ -94,6 +95,8 @@ Le fonctionnement de la file persistante, des clés de contexte, de la réutilis
 des métriques est détaillé dans [docs/generation-durable.md](./docs/generation-durable.md).
 Le protocole de comparaison réelle et la boucle de télémétrie sont détaillés dans
 [docs/evaluation-reelle.md](./docs/evaluation-reelle.md).
+La cadence d'audit et la procédure d'exception temporaire sont détaillées dans
+[docs/dependency-security.md](./docs/dependency-security.md).
 
 Avant le démarrage, le check-in structure le temps disponible, l'énergie, les courbatures, une
 éventuelle douleur localisée et l'intention du jour. Les règles versionnées recalculent localement
