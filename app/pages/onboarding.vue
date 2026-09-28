@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { isUsableTimezone, runtimeTimezones } from '~~/shared/schedule'
+import { requestErrorMessage } from '~/utils/settings-save'
+
 useHead({ title: 'Bienvenue' })
 
 const toast = useToast()
@@ -15,6 +18,7 @@ const DURATIONS = [
   { label: '40 min', value: 40 },
   { label: '45 min', value: 45 },
 ]
+const TIMEZONES = runtimeTimezones().map((value) => ({ label: value, value }))
 
 const form = reactive({
   fitnessLevel: null as string | null,
@@ -23,10 +27,21 @@ const form = reactive({
   constraints: '',
   trainingDays: [1, 3, 5],
   generationTime: '07:00',
+  timezone: 'Europe/Paris',
   targetDurationMin: 45,
 })
 
 const saving = ref(false)
+
+onMounted(() => {
+  const detected = Intl.DateTimeFormat().resolvedOptions().timeZone
+  if (!isUsableTimezone(detected)) return
+  form.timezone = detected
+  if (!TIMEZONES.some(({ value }) => value === detected)) {
+    TIMEZONES.push({ label: detected, value: detected })
+    TIMEZONES.sort((a, b) => a.label.localeCompare(b.label))
+  }
+})
 
 async function submit() {
   if (!form.fitnessLevel) {
@@ -48,6 +63,7 @@ async function submit() {
         constraints: form.constraints || null,
         trainingDays: form.trainingDays,
         generationTime: form.generationTime,
+        timezone: form.timezone,
         targetDurationMin: form.targetDurationMin,
       },
     })
@@ -58,8 +74,8 @@ async function submit() {
       color: 'success',
     })
     await navigateTo('/')
-  } catch (e: any) {
-    toast.add({ title: 'Échec', description: e?.data?.statusMessage ?? e?.message, color: 'error' })
+  } catch (error: unknown) {
+    toast.add({ title: 'Échec', description: requestErrorMessage(error), color: 'error' })
   } finally {
     saving.value = false
   }
@@ -145,6 +161,17 @@ async function submit() {
       <p class="mt-1.5 text-xs text-dimmed">
         Ta séance sera générée automatiquement à cette heure les jours d'entraînement.
       </p>
+    </section>
+
+    <section>
+      <label class="mb-1.5 block text-sm font-medium">Fuseau horaire</label>
+      <USelectMenu
+        v-model="form.timezone"
+        :items="TIMEZONES"
+        value-key="value"
+        searchable
+        class="w-full"
+      />
     </section>
 
     <UButton

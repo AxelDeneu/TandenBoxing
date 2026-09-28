@@ -5,6 +5,8 @@ import {
   type ExercisePreferenceSummary,
   type PreferenceReasonCode,
 } from '~~/shared/exercise-preferences'
+import { runtimeTimezones } from '~~/shared/schedule'
+import { requestErrorMessage, saveSettingsForms } from '~/utils/settings-save'
 
 useHead({ title: 'Réglages' })
 
@@ -23,6 +25,10 @@ const MODELS = [
   { label: 'Haiku 4.5 — économique', value: 'claude-haiku-4-5-20251001' },
 ]
 const DURATIONS = [30, 35, 40, 45, 50, 60].map((v) => ({ label: `${v} min`, value: v }))
+const TIMEZONES = runtimeTimezones(settingsData.value?.timezone).map((value) => ({
+  label: value,
+  value,
+}))
 const LEVELS = [
   { label: 'Débutant', value: 'debutant' },
   { label: 'Intermédiaire', value: 'intermediaire' },
@@ -58,13 +64,6 @@ const editingPreference = ref<ExercisePreferenceSummary | null>(null)
 const preferenceToDelete = ref<ExercisePreferenceSummary | null>(null)
 const preferenceAction = ref<'liked' | 'disliked'>('liked')
 const preferenceReason = ref<PreferenceReasonCode | undefined>()
-
-function errorMessage(error: unknown): string | undefined {
-  if (!error || typeof error !== 'object') return undefined
-  const candidate = error as { data?: { statusMessage?: unknown }; message?: unknown }
-  if (typeof candidate.data?.statusMessage === 'string') return candidate.data.statusMessage
-  return typeof candidate.message === 'string' ? candidate.message : undefined
-}
 
 function editPreference(preference: ExercisePreferenceSummary) {
   editingPreference.value = preference
@@ -116,7 +115,7 @@ async function savePreference() {
   } catch (error: unknown) {
     toast.add({
       title: 'Échec',
-      description: errorMessage(error),
+      description: requestErrorMessage(error),
       color: 'error',
       icon: 'i-lucide-triangle-alert',
     })
@@ -143,7 +142,7 @@ async function deletePreference() {
   } catch (error: unknown) {
     toast.add({
       title: 'Échec',
-      description: errorMessage(error),
+      description: requestErrorMessage(error),
       color: 'error',
       icon: 'i-lucide-triangle-alert',
     })
@@ -155,26 +154,26 @@ async function deletePreference() {
 async function save() {
   saving.value = true
   try {
-    await Promise.all([
-      $fetch('/api/settings', { method: 'PUT', body: { ...form } }),
-      $fetch('/api/profile', {
-        method: 'PUT',
-        body: {
-          level: profileForm.level,
-          fitnessLevel: profileForm.fitnessLevel ?? null,
-          age: profileForm.age,
-          constraints: profileForm.constraints || null,
-        },
-      }),
-    ])
-    toast.add({ title: 'Réglages enregistrés', icon: 'i-lucide-check', color: 'success' })
-  } catch (e: any) {
-    toast.add({
-      title: 'Échec',
-      description: e?.data?.statusMessage ?? e?.message,
-      color: 'error',
-      icon: 'i-lucide-triangle-alert',
-    })
+    const result = await saveSettingsForms(
+      (request, options) => $fetch(request, options),
+      { ...form },
+      {
+        level: profileForm.level,
+        fitnessLevel: profileForm.fitnessLevel ?? null,
+        age: profileForm.age,
+        constraints: profileForm.constraints || null,
+      },
+    )
+    if (result.ok) {
+      toast.add({ title: 'Réglages enregistrés', icon: 'i-lucide-check', color: 'success' })
+    } else {
+      toast.add({
+        title: 'Échec',
+        description: result.message,
+        color: 'error',
+        icon: 'i-lucide-triangle-alert',
+      })
+    }
   } finally {
     saving.value = false
   }
@@ -211,7 +210,13 @@ async function save() {
           </div>
           <div>
             <label class="mb-1.5 block text-sm font-medium">Fuseau horaire</label>
-            <UInput v-model="form.timezone" placeholder="Europe/Paris" />
+            <USelectMenu
+              v-model="form.timezone"
+              :items="TIMEZONES"
+              value-key="value"
+              searchable
+              class="w-full"
+            />
           </div>
         </div>
       </UCard>
