@@ -1,4 +1,6 @@
-import { buildTimerPhases, type TimerPhase } from '~~/shared/timer'
+import { computed, onMounted, onScopeDispose, reactive, ref } from 'vue'
+import { buildTimerPhases, resolveTimerGuide, type TimerPhase } from '~~/shared/timer'
+import { createSoundPlayer } from '~/utils/audio'
 import type { Exercise, WorkoutSession } from '~/utils/session'
 
 /**
@@ -55,6 +57,9 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
   }
   const currentExercise = computed<Exercise | null>(() => exerciseOf(current.value))
   const nextExercise = computed<Exercise | null>(() => exerciseOf(next.value))
+  const guide = computed(() => resolveTimerGuide(activeSession, phases, index.value))
+  const guideExercise = computed<Exercise | null>(() => guide.value.exercise)
+  const upcomingExercise = computed<Exercise | null>(() => guide.value.upcomingExercise)
   const phaseProgress = computed(() => {
     const c = current.value
     if (!c || c.seconds === 0) return 0
@@ -354,6 +359,8 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
     next,
     currentExercise,
     nextExercise,
+    guideExercise,
+    upcomingExercise,
     totalSeconds,
     elapsedSeconds,
     activeSeconds,

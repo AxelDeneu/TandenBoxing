@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildTimerPhases } from '../shared/timer'
-import type { WorkoutSession } from '../shared/session-schema'
+import { buildTimerPhases, resolveTimerGuide } from '../shared/timer'
+import type { Exercise, WorkoutSession } from '../shared/session-schema'
 
 const session = {
   title: 't',
@@ -145,5 +145,116 @@ describe('buildTimerPhases — index de bloc/exercice', () => {
     expect(last.blockIndex).toBe(1)
     expect(last.exerciseIndex).toBe(1)
     expect(multi.blocks[1]!.exercises[1]!.name).toBe('Uppercut arrière')
+  })
+})
+
+function guideExercise(name: string, overrides: Partial<Exercise> = {}): Exercise {
+  return {
+    name,
+    category: 'technique',
+    explanation: `Explication ${name}`,
+    tips: [`Conseil ${name}`],
+    commonMistakes: [`Erreur ${name}`],
+    skillIds: [],
+    combo: '1-2',
+    comboExplanation: `Combo ${name}`,
+    intervals: { work: 20, rest: 5, rounds: 2 },
+    restAfterSec: 10,
+    ...overrides,
+  }
+}
+
+const guideSession: WorkoutSession = {
+  title: 'Guides',
+  curriculumVersion: 'beginner-curriculum/v1',
+  category: 'apprentissage',
+  focus: 'combinaisons',
+  summary: 'Test des guides',
+  coachNote: 'Test',
+  estimatedDurationMin: 10,
+  blocks: [
+    {
+      type: 'technique',
+      title: 'Technique',
+      description: 'Premier bloc',
+      exercises: [
+        guideExercise('A'),
+        guideExercise('B', { intervals: { work: 20, rest: 0, rounds: 1 } }),
+      ],
+    },
+    {
+      type: 'cardio',
+      title: 'Cardio',
+      description: 'Deuxième bloc',
+      exercises: [
+        guideExercise('C', {
+          category: 'cardio',
+          intervals: { work: 20, rest: 0, rounds: 1 },
+          restAfterSec: 10,
+        }),
+      ],
+    },
+  ],
+}
+
+describe('resolveTimerGuide', () => {
+  const phases = buildTimerPhases(guideSession)
+
+  function phaseIndex(
+    predicate: (phase: (typeof phases)[number], index: number) => boolean,
+  ): number {
+    const index = phases.findIndex(predicate)
+    expect(index).toBeGreaterThanOrEqual(0)
+    return index
+  }
+
+  it.each([
+    ['prepare', phaseIndex((phase) => phase.kind === 'prepare' && phase.exerciseIndex === 0)],
+    ['work', phaseIndex((phase) => phase.kind === 'work' && phase.exerciseIndex === 0)],
+    [
+      'repos inter-round',
+      phaseIndex((phase) => phase.restKind === 'between-rounds' && phase.exerciseIndex === 0),
+    ],
+  ])('conserve le guide courant pendant %s', (_label, index) => {
+    const result = resolveTimerGuide(guideSession, phases, index)
+
+    expect(result.exercise?.name).toBe('A')
+    expect(result.upcomingExercise?.name).toBe('B')
+  })
+
+  it('affiche le prochain exercice pendant un repos de transition du même bloc', () => {
+    const index = phaseIndex(
+      (phase) => phase.restKind === 'between-exercises' && phase.exerciseIndex === 0,
+    )
+
+    expect(resolveTimerGuide(guideSession, phases, index).exercise?.name).toBe('B')
+    expect(phases[index + 1]).toMatchObject({ kind: 'prepare', exerciseIndex: 1 })
+    expect(resolveTimerGuide(guideSession, phases, index + 1).exercise?.name).toBe('B')
+  })
+
+  it('affiche le prochain exercice pendant une transition entre deux blocs', () => {
+    const index = phaseIndex(
+      (phase) =>
+        phase.restKind === 'between-exercises' &&
+        phase.blockIndex === 0 &&
+        phase.exerciseIndex === 1,
+    )
+
+    expect(resolveTimerGuide(guideSession, phases, index).exercise?.name).toBe('C')
+  })
+
+  it('reste sur le dernier exercice sans accéder à un index futur invalide', () => {
+    const index = phaseIndex(
+      (phase) => phase.kind === 'work' && phase.blockIndex === 1 && phase.exerciseIndex === 0,
+    )
+
+    expect(resolveTimerGuide(guideSession, phases, index)).toEqual({
+      exercise: guideSession.blocks[1]!.exercises[0],
+      upcomingExercise: null,
+    })
+    expect(resolveTimerGuide(guideSession, phases, phases.length)).toEqual({
+      exercise: null,
+      upcomingExercise: null,
+    })
   })
 })

@@ -15,8 +15,8 @@ const {
   finished,
   current,
   next,
-  currentExercise,
   nextExercise,
+  guideExercise,
   totalSeconds,
   elapsedSeconds,
   activeSeconds,
@@ -295,7 +295,7 @@ function acknowledgeSafetyNotice(): void {
       <!-- Guide de l'activité en cours (desktop) -->
       <div class="hidden min-h-0 flex-1 items-center lg:flex">
         <div class="max-h-full w-full max-w-[420px] overflow-y-auto">
-          <ExerciseGuidePanel :exercise="currentExercise" :next="nextExercise" />
+          <ExerciseGuidePanel :exercise="guideExercise" :next="nextExercise" />
         </div>
       </div>
     </div>
@@ -403,7 +403,7 @@ function acknowledgeSafetyNotice(): void {
       :ui="{ content: 'max-h-[85dvh]' }"
     >
       <template #body>
-        <ExerciseGuidePanel :exercise="currentExercise" :next="nextExercise" />
+        <ExerciseGuidePanel :exercise="guideExercise" :next="nextExercise" />
       </template>
     </USlideover>
 

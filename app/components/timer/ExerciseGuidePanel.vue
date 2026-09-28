@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { Exercise } from '~/utils/session'
+import { computed } from 'vue'
+import { CATEGORY_META, comboToText, type Exercise } from '~/utils/session'
 
 // Guide de l'activité en cours pendant une séance : reprend le contenu d'ExerciseCard
 // (explication / combo / conseils / erreurs) mais en lecture directe, sans repli.
