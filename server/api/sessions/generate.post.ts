@@ -13,11 +13,11 @@ export default defineEventHandler(async (event) => {
       ? body.date
       : todayIso(getSettings().timezone)
 
-  if (body?.regenerate && findSessionByDate(date)?.status === 'in_progress') {
+  const existing = findSessionByDate(date)
+  if (body?.regenerate && existing && existing.status !== 'generated') {
     throw createError({
       statusCode: 409,
-      statusMessage:
-        'Une séance démarrée ne peut être régénérée. Utilise les actions du timer pour adapter uniquement la suite.',
+      statusMessage: 'Une séance démarrée ou clôturée ne peut pas être régénérée.',
     })
   }
 

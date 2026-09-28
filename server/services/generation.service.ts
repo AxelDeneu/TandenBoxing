@@ -21,6 +21,7 @@ import {
   type GenerationRunMetrics,
 } from '../../shared/generation-jobs'
 import { buildSessionPrompt } from '../../shared/generation-prompt'
+import { canRewriteGeneratedSession } from '../../shared/session-lifecycle'
 import {
   GeneratedSessionValidationError,
   resolveGeneratedSession,
@@ -595,6 +596,15 @@ function persistResolvedSession(
   settingsRow: ReturnType<typeof getSettings>,
   metadata: PersistGenerationMetadata,
 ): Session {
+  const current = findSessionByDate(date)
+  if (current && !canRewriteGeneratedSession(current.status)) {
+    throw new GenerationExecutionError(
+      'permanent',
+      'SESSION_IMMUTABLE',
+      'La séance a été démarrée ou clôturée pendant sa génération.',
+      'La séance existante est conservée sans modification.',
+    )
+  }
   const tagged: WorkoutSession = {
     ...session,
     blocks: session.blocks.map((block) => ({
@@ -614,7 +624,7 @@ function persistResolvedSession(
     tagged,
     context.prescription.exercisePreferences,
   )
-  return upsertSessionByDate({
+  const persisted = upsertSessionByDate({
     date,
     status: 'generated',
     title: tagged.title,
@@ -633,6 +643,18 @@ function persistResolvedSession(
     generationContext: context,
     generatedAt: new Date(),
   })
+  if (
+    persisted.status !== 'generated' ||
+    (metadata.contextHash && persisted.generationContextHash !== metadata.contextHash)
+  ) {
+    throw new GenerationExecutionError(
+      'permanent',
+      'SESSION_IMMUTABLE',
+      'La séance a été démarrée ou clôturée pendant sa génération.',
+      'La séance existante est conservée sans modification.',
+    )
+  }
+  return persisted
 }
 
 function lockAdjustmentPrescription(
@@ -717,12 +739,16 @@ export async function generateSessionForDateDetailed(
 ): Promise<GeneratedSessionResult> {
   const existing = findSessionByDate(date)
   const adjustment = options.adjustment?.trim()
-  if (existing?.status === 'in_progress' && (options.regenerate || adjustment)) {
+  if (
+    existing &&
+    !canRewriteGeneratedSession(existing.status) &&
+    (options.regenerate || adjustment)
+  ) {
     throw new GenerationExecutionError(
       'permanent',
-      'SESSION_ALREADY_STARTED',
-      'Une séance démarrée ne peut être régénérée.',
-      'Utilise les actions du timer pour adapter uniquement la suite.',
+      'SESSION_IMMUTABLE',
+      'Une séance démarrée ou clôturée ne peut pas être régénérée.',
+      'Conserve son historique et crée une autre séance si nécessaire.',
     )
   }
   if (existing && !options.regenerate && !adjustment) {

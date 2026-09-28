@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `skipped_block_count` integer;

@@ -68,7 +68,7 @@ export function getEvaluationTelemetry(from: string, to: string, minimumGroupSiz
       plannedDurationSeconds: session.targetDurationMin * 60,
       actualDurationSeconds: feedback?.actualDurationSec ?? session.actualDurationSec ?? null,
       completed: session.status === 'completed' || feedback?.completed === true,
-      skippedBlockCount: feedback?.skippedBlockCount ?? null,
+      skippedBlockCount: feedback?.skippedBlockCount ?? session.skippedBlockCount ?? null,
       plannedDifficulty: plannedDifficulty(session.generationContext),
       feltDifficulty: feedback?.overallDifficulty ?? null,
       enjoyment: feedback?.enjoyment ?? null,

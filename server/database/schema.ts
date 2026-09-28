@@ -123,6 +123,8 @@ export const sessions = sqliteTable('sessions', {
   startedAt: integer('started_at', { mode: 'timestamp' }),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
   actualDurationSec: integer('actual_duration_sec'),
+  /** Nombre de blocs ignorés mesuré par le timer, indépendamment du feedback facultatif. */
+  skippedBlockCount: integer('skipped_block_count'),
   ...timestamps,
 })
 

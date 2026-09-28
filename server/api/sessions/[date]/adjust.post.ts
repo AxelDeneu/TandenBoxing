@@ -17,23 +17,22 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Consigne invalide.' })
   }
 
+  const session = findSessionByDate(date)
+  if (!session) {
+    throw createError({ statusCode: 404, statusMessage: 'Séance introuvable.' })
+  }
+  if (session.status !== 'generated') {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Une séance démarrée ou clôturée ne peut pas être ajustée.',
+    })
+  }
+
   const { anthropicApiKey } = useRuntimeConfig()
   if (!anthropicApiKey) {
     throw createError({
       statusCode: 500,
       statusMessage: 'Clé API Anthropic manquante. Renseigne NUXT_ANTHROPIC_API_KEY.',
-    })
-  }
-
-  const session = findSessionByDate(date)
-  if (!session) {
-    throw createError({ statusCode: 404, statusMessage: 'Séance introuvable.' })
-  }
-  if (session.status === 'in_progress') {
-    throw createError({
-      statusCode: 409,
-      statusMessage:
-        'Une séance démarrée ne peut être régénérée. Utilise les actions du timer pour adapter uniquement la suite.',
     })
   }
 

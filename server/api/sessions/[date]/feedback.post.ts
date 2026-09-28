@@ -25,7 +25,7 @@ const schema = z.object({
     .default([]),
 })
 
-/** POST /api/sessions/:date/feedback — enregistre le feedback et clôt la séance. */
+/** POST /api/sessions/:date/feedback — enrichit une séance déjà clôturée. */
 export default defineEventHandler(async (event) => {
   const date = getRouterParam(event, 'date')!
   const parsed = schema.safeParse(await readBody(event))

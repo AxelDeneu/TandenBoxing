@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { BODY_AREA_OPTIONS, type BodyArea } from '~~/shared/session-autoregulation'
 import type { WorkoutSession } from '~/utils/session'
+import {
+  createSessionExecutionLifecycle,
+  flushPendingSessionLifecycle,
+} from '~/utils/session-lifecycle-sync'
 
 const props = defineProps<{
   session: WorkoutSession
   date: string
   initialSafetyNotice?: string | null
+  replay?: boolean
+  started?: boolean
 }>()
 
 const {
@@ -26,7 +32,7 @@ const {
   savedSnapshot,
   restoreSnapshot,
   discardSnapshot,
-  toggle,
+  toggle: toggleTimerState,
   pause,
   skip,
   prev,
@@ -46,6 +52,12 @@ const adaptingAction = ref<'too_hard' | 'too_easy' | 'pain' | null>(null)
 const safetyNotice = ref(props.initialSafetyNotice ?? null)
 const safetyOpen = ref(Boolean(props.initialSafetyNotice))
 const toast = useToast()
+const replayMode = ref(props.replay ?? false)
+const sessionStarted = ref(props.started ?? false)
+const executionLifecycle = createSessionExecutionLifecycle(props.date, {
+  replay: props.replay,
+  started: props.started,
+})
 
 function errorMessage(error: unknown): string {
   if (!error || typeof error !== 'object') return 'Erreur inconnue'
@@ -94,9 +106,31 @@ const kindStyle = computed(() => {
   }
 })
 
-onMounted(() => {
-  // Marque la séance comme démarrée (best-effort, tolère l'offline).
-  $fetch(`/api/sessions/${props.date}/start`, { method: 'POST' }).catch(() => {})
+function syncLifecycle(): void {
+  void flushPendingSessionLifecycle(props.date).catch(() => {
+    // La file locale sera rejouée par le plugin au retour du réseau.
+  })
+}
+
+/** Le montage reste en lecture seule : seul le premier vrai appui sur Lecture démarre la séance. */
+function toggleTimer(): void {
+  if (!running.value && !finished.value && executionLifecycle.start()) {
+    sessionStarted.value = true
+    syncLifecycle()
+  }
+  toggleTimerState()
+}
+
+watch(finished, (isFinished, wasFinished) => {
+  if (!isFinished || wasFinished) return
+  if (
+    executionLifecycle.finish({
+      actualDurationSec: activeSeconds.value,
+      skippedBlockCount: skippedBlockCount.value,
+    })
+  ) {
+    syncLifecycle()
+  }
 })
 
 const confirmExitOpen = ref(false)
@@ -118,6 +152,9 @@ function exit() {
   navigateTo('/')
 }
 function restart() {
+  // Une répétition est un entraînement local : elle ne réouvre ni ne réécrit l'historique clôturé.
+  executionLifecycle.restartAsReplay()
+  replayMode.value = true
   reset()
   start()
 }
@@ -306,9 +343,13 @@ function acknowledgeSafetyNotice(): void {
       <div>
         <h2 class="text-3xl font-bold">Séance terminée&nbsp;!</h2>
         <p class="mt-2 opacity-70">Durée réelle : {{ formatDuration(activeSeconds) }}</p>
+        <p v-if="replayMode" class="mt-1 text-sm opacity-60">
+          Répétition locale — l’historique terminé reste inchangé.
+        </p>
       </div>
       <div class="flex w-full max-w-xs flex-col gap-2">
         <UButton
+          v-if="!replayMode && sessionStarted"
           block
           size="xl"
           color="primary"
@@ -327,7 +368,7 @@ function acknowledgeSafetyNotice(): void {
     </div>
 
     <!-- Autorégulation structurée : seule la suite est modifiée. -->
-    <div v-if="!finished" class="px-4 pt-2">
+    <div v-if="!finished && !replayMode" class="px-4 pt-2">
       <div class="mx-auto grid max-w-md grid-cols-3 gap-2">
         <UButton
           block
@@ -383,7 +424,7 @@ function acknowledgeSafetyNotice(): void {
         color="primary"
         class="size-16 justify-center rounded-full"
         :aria-label="running ? 'Pause' : 'Démarrer'"
-        @click="toggle"
+        @click="toggleTimer"
       />
       <UButton
         icon="i-lucide-skip-forward"

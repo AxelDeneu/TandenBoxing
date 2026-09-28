@@ -318,6 +318,7 @@ async function deleteSession() {
       </div>
 
       <UButton
+        v-if="!isSkipped"
         block
         size="xl"
         :color="data.status === 'completed' ? 'neutral' : 'primary'"
@@ -329,14 +330,14 @@ async function deleteSession() {
       </UButton>
 
       <UButton
-        v-if="!isCompleted && !isSkipped"
+        v-if="isCompleted"
         block
         color="primary"
         variant="soft"
         icon="i-lucide-clipboard-check"
         :to="`/seance/${data.date}/feedback`"
       >
-        Noter la séance
+        {{ ratedFeedback ? 'Modifier le feedback' : 'Noter la séance' }}
       </UButton>
 
       <UButton
@@ -351,6 +352,7 @@ async function deleteSession() {
       </UButton>
 
       <UButton
+        v-if="data.status === 'generated'"
         block
         color="neutral"
         variant="ghost"

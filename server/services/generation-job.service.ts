@@ -10,6 +10,7 @@ import {
 } from '../../shared/generation-jobs'
 import { GENERATOR_VERSIONS } from '../../shared/generator-version'
 import { addDays, isoWeekday, todayIso } from '../../shared/dates'
+import { canRewriteGeneratedSession } from '../../shared/session-lifecycle'
 import type { GenerationJob, Session } from '../database/schema'
 import { isDateDismissed } from '../repositories/dismissed-date.repository'
 import {
@@ -17,6 +18,7 @@ import {
   completeGenerationJob,
   createGenerationJob,
   failGenerationJob,
+  findGenerationJob,
   findLatestGenerationJob,
   findNextGenerationDispatchAt,
   hasActiveGenerationJob,
@@ -129,12 +131,16 @@ export function requestGenerationJob(
   if (!automaticGenerationAllowed(getSettings())) return null
   const existing = findSessionByDate(date)
   const adjustment = options.adjustment?.trim() || null
-  if (existing?.status === 'in_progress' && (options.regenerate || adjustment)) {
+  if (
+    existing &&
+    !canRewriteGeneratedSession(existing.status) &&
+    (options.regenerate || adjustment)
+  ) {
     throw new GenerationExecutionError(
       'permanent',
-      'SESSION_ALREADY_STARTED',
-      'Une séance démarrée ne peut être régénérée.',
-      'Utilise les actions du timer pour adapter uniquement la suite.',
+      'SESSION_IMMUTABLE',
+      'Une séance démarrée ou clôturée ne peut pas être régénérée.',
+      'Conserve son historique et crée une autre séance si nécessaire.',
     )
   }
   if (existing && !options.regenerate && !adjustment) return null
@@ -162,6 +168,16 @@ export function requestGenerationJob(
 }
 
 export function retryGenerationJob(jobId: number): GenerationJob {
+  const existingJob = findGenerationJob(jobId)
+  const session = existingJob ? findSessionByDate(existingJob.sessionDate) : undefined
+  if (!existingJob || (session && !canRewriteGeneratedSession(session.status))) {
+    throw new GenerationExecutionError(
+      'permanent',
+      'SESSION_IMMUTABLE',
+      'Une séance démarrée ou clôturée ne peut pas être régénérée.',
+      'La séance existante est conservée sans modification.',
+    )
+  }
   const job = requeueFailedGenerationJob(jobId)
   kickGenerationWorker()
   return job
@@ -216,6 +232,8 @@ function productionWorkerDependencies(): GenerationWorkerDependencies {
       generateDeterministicFallbackForDate(job.sessionDate, { contextHash: job.contextHash }),
     canFallback: (job) => !job.request.adjustment && !findSessionByDate(job.sessionDate),
     onInvalidated: (job) => {
+      const session = findSessionByDate(job.sessionDate)
+      if (session && !canRewriteGeneratedSession(session.status)) return
       requestGenerationJob(job.sessionDate, {
         ...job.request,
         source: job.source,
