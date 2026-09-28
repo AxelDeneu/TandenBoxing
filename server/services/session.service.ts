@@ -198,12 +198,17 @@ export async function replaceExerciseInSession(
     { source: 'session_edit' },
   )
   const preferences = getExercisePreferenceConstraints(date, pendingPreference)
+  const profile = getProfile()
   const replacement = await generateReplacementExercise(
     structure,
     blockIndex,
     exerciseIndex,
     reasonCode,
     preferences,
+    {
+      goal: profile.goal,
+      equipment: profile.equipment,
+    },
     row.aiModel,
   )
   block.exercises[exerciseIndex] = replacement

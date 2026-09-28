@@ -71,6 +71,13 @@
       "when": 1790256426354,
       "tag": "0009_fearless_payback",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790585608618,
+      "tag": "0010_dusty_masque",
+      "breakpoints": true
     }
   ]
 }

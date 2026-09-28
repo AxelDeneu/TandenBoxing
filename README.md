@@ -1,7 +1,7 @@
 # 🥊 Tanden Boxing
 
-Coach de boxe à domicile. Chaque matin, l'IA (Claude Opus 4.8) prépare ta séance de sac de
-frappe du jour en fonction de ton historique et de tes ressentis. Explications détaillées,
+Coach de boxe à domicile. Chaque matin, l'IA (Claude Opus 4.8) prépare une séance compatible
+avec ton objectif, ton matériel, ton historique et tes ressentis. Explications détaillées,
 timer à intervalles avec audio, et suivi de progression.
 
 ## Fonctionnalités
@@ -82,7 +82,7 @@ Les profils déterministes sont les suivants :
 | Catégorie     | Intensité | Échauffement | Technique | Cardio | Renforcement | Retour au calme |
 | ------------- | --------- | ------------ | --------- | ------ | ------------ | --------------- |
 | apprentissage | 2/5       | 15 %         | 55 %      | 10 %   | 5 %          | 15 %            |
-| renforcement  | 3/5       | 15 %         | 35 %      | 15 %   | 20 %         | 15 %            |
+| renforcement  | 3/5       | 15 %         | 30 %      | 15 %   | 25 %         | 15 %            |
 | enchainement  | 4/5       | 12 %         | 50 %      | 23 %   | 5 %          | 10 %            |
 | cardio        | 5/5       | 12 %         | 15 %      | 58 %   | 5 %          | 10 %            |
 | recuperation  | 1/5       | 30 %         | 25 %      | 0 %    | 0 %          | 45 %            |
@@ -90,6 +90,15 @@ Les profils déterministes sont les suivants :
 La somme des budgets en secondes est toujours égale à la durée cible. La fatigue, une reprise
 après interruption ou une contrainte explicite réduisent l'intensité et interdisent les nouvelles
 techniques, sans écraser les choix explicites de catégorie, focus ou durée.
+
+L'objectif du profil déplace 5 % du budget du cœur de séance vers une dimension vérifiable :
+cardio pour `cardio-perte-de-gras`, technique pour `technique`, renforcement pour
+`forme-generale`. La récupération garde priorité et n'ouvre jamais un bloc intense. L'inventaire
+supporté comprend le pack sac + protections, la corde à sauter, les élastiques, les haltères
+légères et le tapis ; le poids du corps et le shadow boxing ne nécessitent aucun matériel déclaré.
+La politique rejette tout matériel absent ou non modélisé, ainsi que les usages hors de leur bloc
+sûr. Les anciens profils conservent temporairement l'ancien postulat « sac + protections » jusqu'à
+leur première sauvegarde explicite dans les réglages.
 
 Le fonctionnement de la file persistante, des clés de contexte, de la réutilisation, du fallback et
 des métriques est détaillé dans [docs/generation-durable.md](./docs/generation-durable.md).

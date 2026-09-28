@@ -6,8 +6,10 @@ import {
   type WorkoutSession,
 } from './session-schema'
 import { matchingStrictExclusion, type ExercisePreferenceConstraints } from './exercise-preferences'
+import { assessExerciseEquipment, type TrainingEquipment } from './profile-personalization'
+import type { BlockBudgets } from './workout-prescription'
 
-export const SESSION_POLICY_VERSION = 'session-policy/v2'
+export const SESSION_POLICY_VERSION = 'session-policy/v3'
 
 /** Une séance générée doit remplir au moins 90 % de la durée demandée. */
 export const MIN_TARGET_DURATION_RATIO = 0.9
@@ -23,6 +25,10 @@ export type SessionPolicyViolationCode =
   | 'STRICT_EXERCISE_EXCLUSION'
   | 'RECOVERY_HIGH_INTENSITY'
   | 'CATEGORY_PROFILE_MISMATCH'
+  | 'BLOCK_BUDGET_MISMATCH'
+  | 'UNAVAILABLE_EQUIPMENT'
+  | 'UNSUPPORTED_EQUIPMENT'
+  | 'UNSAFE_EQUIPMENT_USE'
 
 export interface SessionPolicyViolation {
   code: SessionPolicyViolationCode
@@ -39,6 +45,10 @@ export interface SessionPolicyRequest {
   hasCustomFocus?: boolean
   /** Seules les exclusions strictes sont bloquantes ; les scores pondérés restent consultatifs. */
   exercisePreferences?: ExercisePreferenceConstraints
+  /** Inventaire fermé et autoritaire issu du profil. Le poids du corps reste toujours disponible. */
+  availableEquipment?: readonly TrainingEquipment[]
+  /** Budgets du planner, y compris l'accent mesurable choisi par l'objectif. */
+  prescribedBlockBudgets?: BlockBudgets
 }
 
 export interface SessionPolicyResult {
@@ -148,6 +158,74 @@ function validateCategoryProfile(
   }
 }
 
+function validateBlockBudgets(
+  session: WorkoutSession,
+  budgets: BlockBudgets | undefined,
+  violations: SessionPolicyViolation[],
+): void {
+  if (!budgets) return
+  const actual = Object.fromEntries(Object.keys(budgets).map((type) => [type, 0])) as Record<
+    keyof BlockBudgets,
+    number
+  >
+  session.blocks.forEach((block, index) => {
+    actual[block.type] += blockSeconds(session, index)
+  })
+  for (const [type, expectedSeconds] of Object.entries(budgets) as Array<
+    [keyof BlockBudgets, number]
+  >) {
+    const actualSeconds = actual[type]
+    const minimumSeconds = expectedSeconds ? Math.floor(expectedSeconds * 0.9) : 0
+    if (
+      (expectedSeconds === 0 && actualSeconds > 0) ||
+      actualSeconds < minimumSeconds ||
+      actualSeconds > expectedSeconds
+    ) {
+      violations.push({
+        code: 'BLOCK_BUDGET_MISMATCH',
+        path: 'blocks',
+        details: { blockType: type, expectedSeconds, minimumSeconds, actualSeconds },
+      })
+    }
+  }
+}
+
+function validateEquipment(
+  session: WorkoutSession,
+  availableEquipment: readonly TrainingEquipment[] | undefined,
+  violations: SessionPolicyViolation[],
+): void {
+  if (!availableEquipment) return
+  const available = new Set(availableEquipment)
+  session.blocks.forEach((block, blockIndex) => {
+    block.exercises.forEach((exercise, exerciseIndex) => {
+      const compatibility = assessExerciseEquipment(exercise, block.type, [...available])
+      for (const missing of compatibility.missing) {
+        violations.push({
+          code: 'UNAVAILABLE_EQUIPMENT',
+          path: `blocks.${blockIndex}.exercises.${exerciseIndex}`,
+          details: { equipment: missing },
+        })
+      }
+      for (const unsupported of compatibility.unsupported) {
+        violations.push({
+          code: 'UNSUPPORTED_EQUIPMENT',
+          path: `blocks.${blockIndex}.exercises.${exerciseIndex}`,
+          details: { equipment: unsupported },
+        })
+      }
+
+      if (compatibility.unsafe.length) {
+        violations.push({
+          code: 'UNSAFE_EQUIPMENT_USE',
+          path: `blocks.${blockIndex}.exercises.${exerciseIndex}`,
+          details: { blockType: block.type, equipment: compatibility.unsafe[0]! },
+        })
+      }
+    })
+  })
+}
+
 /** Valide les invariants métier appliqués uniquement aux nouvelles sorties de génération. */
 export function validateSessionPolicy(
   session: WorkoutSession,
@@ -237,6 +315,8 @@ export function validateSessionPolicy(
     })
   })
 
+  validateBlockBudgets(session, request.prescribedBlockBudgets, violations)
+  validateEquipment(session, request.availableEquipment, violations)
   validateCategoryProfile(session, violations)
 
   return {

@@ -8,6 +8,7 @@ let onboardingHandler: ApiHandler
 const updateSettings = vi.fn((patch: Record<string, unknown>) => ({ id: 1, ...patch }))
 const updateProfile = vi.fn((patch: Record<string, unknown>) => ({ id: 1, ...patch }))
 const invalidatePreparedSessions = vi.fn()
+const ensureTodaySession = vi.fn()
 
 beforeAll(async () => {
   vi.stubGlobal('defineEventHandler', (handler: ApiHandler) => handler)
@@ -30,6 +31,7 @@ beforeAll(async () => {
   vi.stubGlobal('updateSettings', updateSettings)
   vi.stubGlobal('updateProfile', updateProfile)
   vi.stubGlobal('invalidatePreparedSessions', invalidatePreparedSessions)
+  vi.stubGlobal('ensureTodaySession', ensureTodaySession)
 
   settingsHandler = (await import('../server/api/settings.put')).default as ApiHandler
   onboardingHandler = (await import('../server/api/onboarding.post')).default as ApiHandler
@@ -64,6 +66,8 @@ describe('contrat API de planification', () => {
     await expect(
       onboardingHandler({
         body: {
+          goal: 'cardio-perte-de-gras',
+          equipment: [],
           fitnessLevel: 'actif',
           experience: null,
           age: 30,
@@ -92,6 +96,8 @@ describe('contrat API de planification', () => {
     await expect(
       onboardingHandler({
         body: {
+          goal: 'technique',
+          equipment: ['sac-de-frappe'],
           fitnessLevel: 'sportif',
           experience: null,
           age: null,
@@ -103,7 +109,9 @@ describe('contrat API de planification', () => {
         },
       }),
     ).resolves.toEqual({ ok: true })
-    expect(updateProfile).toHaveBeenCalledOnce()
+    expect(updateProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ goal: 'technique', equipment: ['sac-de-frappe'] }),
+    )
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         trainingDays: [1, 5],
@@ -112,5 +120,6 @@ describe('contrat API de planification', () => {
       }),
     )
     expect(invalidatePreparedSessions).toHaveBeenCalledOnce()
+    expect(ensureTodaySession).toHaveBeenCalledOnce()
   })
 })

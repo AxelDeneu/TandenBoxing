@@ -40,6 +40,7 @@ const updateProfile = vi.fn((patch: Record<string, unknown>) => {
   return { ...state.profile }
 })
 const invalidatePreparedSessions = vi.fn()
+const ensureTodaySession = vi.fn()
 
 beforeAll(async () => {
   vi.stubGlobal('defineEventHandler', (handler: ApiHandler) => handler)
@@ -67,6 +68,7 @@ beforeAll(async () => {
   vi.stubGlobal('updateSettings', updateSettings)
   vi.stubGlobal('updateProfile', updateProfile)
   vi.stubGlobal('invalidatePreparedSessions', invalidatePreparedSessions)
+  vi.stubGlobal('ensureTodaySession', ensureTodaySession)
 
   settingsHandler = (await import('../server/api/settings.put')).default as ApiHandler
   onboardingHandler = (await import('../server/api/onboarding.post')).default as ApiHandler
@@ -93,6 +95,8 @@ describe('échec de construction du scheduler', () => {
     await expect(
       onboardingHandler({
         body: {
+          goal: 'cardio-perte-de-gras',
+          equipment: [],
           fitnessLevel: 'actif',
           experience: null,
           age: 30,
@@ -128,6 +132,8 @@ describe('échec de construction du scheduler', () => {
     await expect(
       onboardingHandler({
         body: {
+          goal: 'forme-generale',
+          equipment: ['elastiques'],
           fitnessLevel: 'sportif',
           experience: null,
           age: 30,

@@ -2,6 +2,11 @@ import type AnthropicSDK from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { BEGINNER_CURRICULUM } from '../../shared/curriculum'
 import {
+  assessExerciseEquipment,
+  equipmentPromptList,
+  goalLabel,
+} from '../../shared/profile-personalization'
+import {
   matchingStrictExclusion,
   preferenceReasonLabel,
   tracePreferenceInfluence,
@@ -28,8 +33,6 @@ import {
   blockSchema,
   exerciseSchema,
   SESSION_CATEGORY_META,
-  sessionCategory,
-  workoutFocus,
   workoutSessionSchema,
   type Exercise,
   type BlockType,
@@ -101,7 +104,7 @@ const FOCUS_GUIDE = [
   '- crochets : crochets avant/arrière (3, 4), rotation du buste et des appuis.',
   '- uppercuts : uppercuts avant/arrière (5, 6), travail à distance courte.',
   '- combinaisons : enchaînements de 3 coups et plus, fluidité et rythme.',
-  '- puissance : frappes engagées au sac, transfert de poids (volume maîtrisé).',
+  '- puissance : transfert de poids et explosivité maîtrisée, avec ou sans impact selon le matériel.',
   '- corps : travail au corps (plexus, flancs), changements de niveau.',
   '- cardio : densité et endurance de frappe, peu de nouveauté technique.',
   '- gainage : ceinture abdominale et renforcement au poids du corps au service de la frappe.',
@@ -119,13 +122,15 @@ const CURRICULUM_GUIDE = BEGINNER_CURRICULUM.skills
   )
   .join('\n')
 
-export const SYSTEM_PROMPT = `Tu es un coach de boxe anglaise expert, spécialisé dans l'entraînement au sac de frappe à domicile pour la remise en forme et la perte de gras. Tu conçois des séances matinales sûres, progressives et motivantes. Tu tutoies l'utilisateur et écris exclusivement en français.
+export const SYSTEM_PROMPT = `Tu es un coach de boxe anglaise expert, spécialisé dans l'entraînement à domicile. Tu conçois des séances matinales sûres, progressives, motivantes et strictement compatibles avec le profil fourni. Tu tutoies l'utilisateur et écris exclusivement en français.
 
 PUBLIC & MATÉRIEL
 - L'utilisateur s'entraîne seul, à la maison, le matin, avant sa journée.
-- Matériel disponible : un sac de frappe, des gants, des bandes. RIEN d'autre (pas de corde à sauter, pas de poids, pas d'élastiques, pas de banc). N'utilise QUE le sac de frappe et le poids du corps.
+- "prescription.personalization.equipment" est l'inventaire fermé et autoritaire. Le poids du corps et le shadow boxing restent toujours disponibles ; n'utilise AUCUN autre matériel.
+- Pour chaque exercice, renseigne "equipment" avec les identifiants exacts réellement requis. Une liste vide signifie sans matériel.
+- Le sac de frappe n'est permis que dans les blocs technique/cardio. La corde est réservée à l'échauffement/cardio. Les élastiques sont réservés à l'activation/renforcement. Les haltères légères sont réservées au renforcement et ne sont jamais tenues pendant des frappes.
 - Niveau DÉBUTANT en boxe anglaise : poings uniquement (jab, cross, crochets, uppercuts). JAMAIS de coups de pied, genoux ou coudes.
-- Objectif principal : cardio et perte de gras, tout en construisant des bases techniques propres et une bonne garde.
+- "prescription.personalization.goal" et "goalInfluence" sont autoritaires : respecte leur budget mesurable sans leur substituer un objectif générique.
 
 CATÉGORIE = STRUCTURE DE LA SÉANCE
 Le champ "category" définit le TYPE de séance et pilote sa structure et son intensité :
@@ -839,17 +844,17 @@ export async function generateSessionForDateDetailed(
     ? preparePartialCandidate(toolUse.input, reusableBlocks, missingBlockTypes)
     : toolUse.input
 
-  const requestedCategory = sessionCategory.safeParse(demande?.categorie)
-  const requestedFocus = workoutFocus.safeParse(demande?.focus)
   let session: WorkoutSession
   try {
     session = await resolveGeneratedSession(initialCandidate, {
       policy: {
         targetDurationMin: context.dureeCibleMin,
-        requestedCategory: requestedCategory.success ? requestedCategory.data : null,
-        requestedFocus: requestedFocus.success ? requestedFocus.data : null,
-        hasCustomFocus: Boolean(demande?.focusLibre),
+        requestedCategory: context.prescription.category,
+        requestedFocus: context.prescription.focus,
+        hasCustomFocus: false,
         exercisePreferences: context.prescription.exercisePreferences,
+        availableEquipment: context.prescription.personalization.equipment,
+        prescribedBlockBudgets: context.prescription.blockBudgets,
       },
       onInvalid: (attempt, violations) => logGenerationViolations(date, attempt, violations),
       correct: async (candidate, violations) => {
@@ -874,6 +879,7 @@ export async function generateSessionForDateDetailed(
           '```json',
           JSON.stringify(context.prescription.exercisePreferences.strictExclusions, null, 2),
           '```',
+          `Matériel autorisé : ${equipmentPromptList(context.prescription.personalization.equipment)}.`,
           `Séance candidate :`,
           '```json',
           JSON.stringify(candidate, null, 2),
@@ -992,6 +998,7 @@ export async function generateReplacementExercise(
   exerciseIndex: number,
   reasonCode: PreferenceReasonCode | null | undefined,
   preferences: ExercisePreferenceConstraints,
+  personalization: Pick<GenerationContext['prescription']['personalization'], 'goal' | 'equipment'>,
   model: string,
 ): Promise<Exercise> {
   const block = structure.blocks[blockIndex]!
@@ -1011,7 +1018,8 @@ export async function generateReplacementExercise(
     '```json',
     JSON.stringify(preferences, null, 2),
     '```',
-    `Contraintes : reste cohérent avec le bloc et le même type d'effort, garde une durée d'intervalles similaire, respecte le matériel (sac de frappe et poids du corps uniquement) et le niveau débutant. Respecte toutes les exclusions strictes. Les préférences pondérées viennent après la sécurité, les prérequis, la progression et la variété. Évite un exercice déjà présent dans la séance. Renseigne ses skillIds stables ; conserve la cible pédagogique de l'exercice remplacé sauf si le motif demande de la changer.`,
+    `Objectif du profil : ${personalization.goal} (${goalLabel(personalization.goal)}). Matériel autorisé : ${equipmentPromptList(personalization.equipment)}.`,
+    `Contraintes : reste cohérent avec le bloc et le même type d'effort, garde une durée d'intervalles similaire, n'utilise aucun matériel absent de cet inventaire et respecte le niveau débutant. Renseigne "equipment" avec les identifiants exacts requis. Respecte toutes les exclusions strictes. Les préférences pondérées viennent après la sécurité, les prérequis, la progression et la variété. Évite un exercice déjà présent dans la séance. Renseigne ses skillIds stables ; conserve la cible pédagogique de l'exercice remplacé sauf si le motif demande de la changer.`,
     `Appelle l'outil "proposer_exercice".`,
   ].join('\n')
 
@@ -1054,6 +1062,12 @@ export async function generateReplacementExercise(
     })
   }
   const replacement = tagExerciseWithSkills(parsed.data)
+  if (!assessExerciseEquipment(replacement, block.type, personalization.equipment).compatible) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: "L'alternative proposée ne respecte pas le matériel disponible. Réessaie.",
+    })
+  }
   if (matchingStrictExclusion(replacement, block.type, preferences)) {
     throw createError({
       statusCode: 502,

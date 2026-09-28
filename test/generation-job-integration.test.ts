@@ -6,6 +6,7 @@ import {
   generationJobAttempts,
   generationJobs,
   sessions,
+  settings,
   type GenerationJob,
   type Session,
 } from '../server/database/schema'
@@ -21,7 +22,9 @@ import {
 } from '../server/repositories/session.repository'
 import {
   invalidatePreparedSessionBatch,
+  ensureTodaySessionWithDependencies,
   processClaimedGenerationJob,
+  requestGenerationJob,
   stableGenerationHash,
   type GenerationWorkerDependencies,
 } from '../server/services/generation-job.service'
@@ -65,6 +68,13 @@ function createTables(): void {
       'started_at INTEGER DEFAULT (unixepoch()) NOT NULL, completed_at INTEGER);',
       'CREATE UNIQUE INDEX generation_job_attempts_job_attempt_unique',
       'ON generation_job_attempts (job_id, attempt_number);',
+      'CREATE TABLE settings (',
+      'id INTEGER PRIMARY KEY DEFAULT 1 NOT NULL,',
+      "training_days TEXT DEFAULT '[1,3,5]' NOT NULL, generation_time TEXT DEFAULT '07:00' NOT NULL,",
+      "target_duration_min INTEGER DEFAULT 45 NOT NULL, timezone TEXT DEFAULT 'Europe/Paris' NOT NULL,",
+      "ai_model TEXT DEFAULT 'claude-opus-4-8' NOT NULL, weight_tracking_enabled INTEGER DEFAULT true NOT NULL,",
+      'auth_enabled INTEGER DEFAULT false NOT NULL, onboarding_completed INTEGER DEFAULT false NOT NULL,',
+      'created_at INTEGER DEFAULT (unixepoch()) NOT NULL, updated_at INTEGER DEFAULT (unixepoch()) NOT NULL);',
       'CREATE TABLE sessions (',
       'id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, date TEXT NOT NULL UNIQUE,',
       "status TEXT DEFAULT 'generated' NOT NULL, title TEXT NOT NULL, category TEXT,",
@@ -103,9 +113,12 @@ function successfulResult(fallbackUsed = false): GeneratedSessionResult {
 beforeEach(() => {
   sqlite = new Database(':memory:')
   createTables()
-  db = drizzle(sqlite, { schema: { generationJobs, generationJobAttempts, sessions } })
+  db = drizzle(sqlite, { schema: { generationJobs, generationJobAttempts, sessions, settings } })
   vi.stubGlobal('useDatabase', () => db)
   vi.stubGlobal('sessions', sessions)
+  vi.stubGlobal('settings', settings)
+  vi.stubGlobal('ensureSingletons', () => undefined)
+  db.insert(settings).values({ id: 1 }).run()
 })
 
 afterEach(() => {
@@ -114,6 +127,63 @@ afterEach(() => {
 })
 
 describe('generation jobs — intégration SQLite', () => {
+  it('ne crée aucune file pouvant appeler le fournisseur avant onboarding', () => {
+    expect(requestGenerationJob('2026-10-01', { source: 'automatic' })).toBeNull()
+    expect(requestGenerationJob('2026-10-01', { source: 'user' })).toBeNull()
+    expect(db.select().from(generationJobs).all()).toHaveLength(0)
+  })
+
+  it('fait du commit complet de l’onboarding la frontière du premier job automatique', async () => {
+    const settings = {
+      onboardingCompleted: false,
+      timezone: 'Europe/Paris',
+      trainingDays: [4],
+    }
+    const profile = {
+      goal: 'cardio-perte-de-gras',
+      equipment: [] as string[],
+      fitnessLevel: null as string | null,
+    }
+    const dependencies = {
+      today: () => '2026-10-01',
+      weekday: () => 4,
+      findSession: () => undefined,
+      isDismissed: () => false,
+      request: (date: string) => {
+        const contextHash = stableGenerationHash({ profile })
+        createGenerationJob({
+          sessionDate: date,
+          idempotencyKey: `session:${date}:${contextHash}`,
+          contextHash,
+          request: { regenerate: false, adjustment: null },
+          source: 'automatic',
+          nextAttemptAt: new Date('2026-10-01T06:00:00Z'),
+        })
+      },
+    }
+
+    ensureTodaySessionWithDependencies(settings, dependencies)
+    expect(db.select().from(generationJobs).all()).toHaveLength(0)
+
+    // Représente le commit atomique : les choix sont complets avant que le booléen devienne visible.
+    profile.goal = 'technique'
+    profile.equipment = ['sac-de-frappe']
+    profile.fitnessLevel = 'actif'
+    settings.onboardingCompleted = true
+
+    await Promise.all(
+      Array.from({ length: 8 }, async () =>
+        ensureTodaySessionWithDependencies(settings, dependencies),
+      ),
+    )
+    const jobs = db.select().from(generationJobs).all()
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0]).toMatchObject({
+      source: 'automatic',
+      contextHash: stableGenerationHash({ profile }),
+    })
+  })
+
   it('déduplique les demandes concurrentes et ne laisse réclamer le job qu’une fois', async () => {
     const jobs = await Promise.all(Array.from({ length: 8 }, async () => enqueue()))
 
@@ -203,30 +273,37 @@ describe('generation jobs — intégration SQLite', () => {
   })
 
   it('invalide en base une séance anticipée lorsque son contexte change', () => {
-    db.insert(sessions)
-      .values({
-        date: '2026-10-03',
+    const prepared = {
+      date: '2026-10-03',
+      title: 'Préparée',
+      category: 'cardio',
+      focus: 'cardio',
+      summary: 'Résumé',
+      coachNote: 'Note',
+      targetDurationMin: 45,
+      estimatedDurationMin: 45,
+      structure: {
         title: 'Préparée',
+        curriculumVersion: 'beginner-boxing/v1',
         category: 'cardio',
         focus: 'cardio',
         summary: 'Résumé',
         coachNote: 'Note',
-        targetDurationMin: 45,
         estimatedDurationMin: 45,
-        structure: {
-          title: 'Préparée',
-          curriculumVersion: 'beginner-boxing/v1',
-          category: 'cardio',
-          focus: 'cardio',
-          summary: 'Résumé',
-          coachNote: 'Note',
-          estimatedDurationMin: 45,
-          blocks: [],
-        },
-        aiModel: 'claude-opus-4-8',
-        generationSource: 'prefetch',
-        generationContextHash: 'preferences-before',
-      })
+        blocks: [],
+      },
+      aiModel: 'claude-opus-4-8',
+      generationSource: 'prefetch',
+      generationContextHash: 'preferences-before',
+    } as const
+    db.insert(sessions)
+      .values([
+        prepared,
+        { ...prepared, date: '2026-10-04', status: 'in_progress', startedAt: new Date() },
+        { ...prepared, date: '2026-10-05', status: 'completed', completedAt: new Date() },
+        { ...prepared, date: '2026-10-06', generationSource: 'model' },
+        { ...prepared, date: '2026-10-07', startedAt: new Date() },
+      ])
       .run()
 
     const invalidated = invalidatePreparedSessionBatch({
@@ -240,6 +317,18 @@ describe('generation jobs — intégration SQLite', () => {
 
     expect(invalidated).toEqual(['2026-10-03'])
     expect(listPreparedSessions('2026-10-01')).toHaveLength(0)
+    expect(
+      db
+        .select({ date: sessions.date, status: sessions.status })
+        .from(sessions)
+        .all()
+        .sort((left, right) => left.date.localeCompare(right.date)),
+    ).toEqual([
+      { date: '2026-10-04', status: 'in_progress' },
+      { date: '2026-10-05', status: 'completed' },
+      { date: '2026-10-06', status: 'generated' },
+      { date: '2026-10-07', status: 'generated' },
+    ])
   })
 })
 
@@ -255,6 +344,19 @@ describe('bibliothèque, préférences et fallback', () => {
         },
       },
     })
+    expect(after).not.toBe(before)
+  })
+
+  it.each([
+    ['objectif', { goal: 'technique', equipment: [] }],
+    ['matériel', { goal: 'cardio-perte-de-gras', equipment: ['sac-de-frappe'] }],
+  ])('fait évoluer l’empreinte quand le %s change', (_label, personalization) => {
+    const before = stableGenerationHash({
+      prescription: {
+        personalization: { goal: 'cardio-perte-de-gras', equipment: [] },
+      },
+    })
+    const after = stableGenerationHash({ prescription: { personalization } })
     expect(after).not.toBe(before)
   })
 

@@ -1,4 +1,4 @@
-export const GENERATION_CONTEXT_VERSION = 'generation-context/v1'
+export const GENERATION_CONTEXT_VERSION = 'generation-context/v2'
 
 export const GENERATION_JOB_STATUSES = [
   'queued',

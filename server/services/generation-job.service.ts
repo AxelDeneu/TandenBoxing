@@ -114,10 +114,19 @@ export interface RequestGenerationOptions {
   retryFailed?: boolean
 }
 
+export function automaticGenerationAllowed(
+  settings: Pick<ReturnType<typeof getSettings>, 'onboardingCompleted'>,
+): boolean {
+  return settings.onboardingCompleted
+}
+
 export function requestGenerationJob(
   date: string,
   options: RequestGenerationOptions = {},
 ): GenerationJob | null {
+  const source = options.source ?? 'user'
+  // Aucune file — même explicite — ne peut atteindre le fournisseur avec un profil incomplet.
+  if (!automaticGenerationAllowed(getSettings())) return null
   const existing = findSessionByDate(date)
   const adjustment = options.adjustment?.trim() || null
   if (existing?.status === 'in_progress' && (options.regenerate || adjustment)) {
@@ -140,7 +149,7 @@ export function requestGenerationJob(
     idempotencyKey: identity.idempotencyKey,
     contextHash: identity.contextHash,
     request: identity.request,
-    source: options.source ?? 'user',
+    source,
     status: 'queued',
     nextAttemptAt: now,
     queuedAt: now,
@@ -195,6 +204,7 @@ function productionWorkerDependencies(): GenerationWorkerDependencies {
   return {
     now: () => new Date(),
     contextIsCurrent: (job) =>
+      automaticGenerationAllowed(getSettings()) &&
       buildGenerationIdentity(job.sessionDate, job.request).contextHash === job.contextHash,
     execute: (job) =>
       generateSessionForDateDetailed(job.sessionDate, {
@@ -445,7 +455,9 @@ export function invalidatePreparedSessions(): string[] {
       }
     },
     shouldRegenerate: (session) =>
-      settings.trainingDays.includes(isoWeekday(session.date)) && !isDateDismissed(session.date),
+      settings.onboardingCompleted &&
+      settings.trainingDays.includes(isoWeekday(session.date)) &&
+      !isDateDismissed(session.date),
     regenerate: (session) => {
       requestGenerationJob(session.date, { source: 'prefetch' })
     },
@@ -460,6 +472,31 @@ export function generationJobForDate(date: string) {
   return toPublicGenerationJob(findLatestGenerationJob(date))
 }
 
+export interface EnsureTodaySessionDependencies {
+  today: (timezone: string) => string
+  weekday: (date: string) => number
+  findSession: (date: string) => Session | undefined
+  isDismissed: (date: string) => boolean
+  request: (date: string) => void
+}
+
+export function ensureTodaySessionWithDependencies(
+  settings: Pick<
+    ReturnType<typeof getSettings>,
+    'onboardingCompleted' | 'timezone' | 'trainingDays'
+  >,
+  dependencies: EnsureTodaySessionDependencies,
+): Session | null {
+  if (!automaticGenerationAllowed(settings)) return null
+  const today = dependencies.today(settings.timezone)
+  if (!settings.trainingDays.includes(dependencies.weekday(today))) return null
+  const existing = dependencies.findSession(today)
+  if (existing) return existing
+  if (dependencies.isDismissed(today)) return null
+  dependencies.request(today)
+  return null
+}
+
 export function triggerGeneration(
   date: string,
   options: { regenerate?: boolean; adjustment?: string } = {},
@@ -469,11 +506,13 @@ export function triggerGeneration(
 
 export function ensureTodaySession() {
   const settings = getSettings()
-  const today = todayIso(settings.timezone)
-  if (!settings.trainingDays.includes(isoWeekday(today))) return null
-  const existing = findSessionByDate(today)
-  if (existing) return existing
-  if (isDateDismissed(today)) return null
-  requestGenerationJob(today, { source: 'automatic' })
-  return null
+  return ensureTodaySessionWithDependencies(settings, {
+    today: todayIso,
+    weekday: isoWeekday,
+    findSession: findSessionByDate,
+    isDismissed: isDateDismissed,
+    request: (date) => {
+      requestGenerationJob(date, { source: 'automatic' })
+    },
+  })
 }

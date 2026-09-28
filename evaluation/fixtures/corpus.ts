@@ -8,7 +8,8 @@ import type {
 const DEFAULT_PROFILE: EvaluationContext['profile'] = {
   level: 'debutant',
   fitnessLevel: 'actif',
-  equipment: ['sac de frappe', 'gants', 'bandes'],
+  goal: 'cardio-perte-de-gras',
+  equipment: ['sac-de-frappe'],
   constraints: [],
 }
 
@@ -81,6 +82,44 @@ const cases: EvaluationCase[] = [
       focus: 'fondations',
       progression: { maxComboLength: 2 },
     },
+  },
+  {
+    id: 'personalization-no-equipment-technique',
+    title: 'Personnalisation — technique sans matériel',
+    description: 'Le shadow boxing reste la seule modalité technique autorisée.',
+    tags: ['beginner', 'personalization'],
+    context: context('2027-01-07', 30, {
+      profile: { ...DEFAULT_PROFILE, goal: 'technique', equipment: [] },
+    }),
+    expected: { category: 'apprentissage', focus: 'fondations' },
+  },
+  {
+    id: 'personalization-bag-cardio',
+    title: 'Personnalisation — sac et objectif cardio',
+    description: 'Le sac est autorisé et le budget cardio doit refléter l’objectif.',
+    tags: ['beginner', 'personalization'],
+    context: context('2027-01-08', 30, {
+      profile: {
+        ...DEFAULT_PROFILE,
+        goal: 'cardio-perte-de-gras',
+        equipment: ['sac-de-frappe'],
+      },
+    }),
+    expected: { category: 'cardio', focus: 'fondations' },
+  },
+  {
+    id: 'personalization-additional-equipment-general',
+    title: 'Personnalisation — matériel additionnel et forme générale',
+    description: 'La corde et les élastiques sont autorisés dans leurs blocs sûrs.',
+    tags: ['beginner', 'personalization'],
+    context: context('2027-01-09', 30, {
+      profile: {
+        ...DEFAULT_PROFILE,
+        goal: 'forme-generale',
+        equipment: ['corde-a-sauter', 'elastiques'],
+      },
+    }),
+    expected: { category: 'renforcement', focus: 'fondations' },
   },
   {
     id: 'return-after-three-weeks',

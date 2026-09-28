@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import {
+  TRAINING_EQUIPMENT_OPTIONS,
+  TRAINING_GOAL_OPTIONS,
+  type TrainingEquipment,
+  type TrainingGoal,
+} from '~~/shared/profile-personalization'
 import { isUsableTimezone, runtimeTimezones } from '~~/shared/schedule'
 import { requestErrorMessage } from '~/utils/settings-save'
 
@@ -21,6 +27,8 @@ const DURATIONS = [
 const TIMEZONES = runtimeTimezones().map((value) => ({ label: value, value }))
 
 const form = reactive({
+  goal: 'cardio-perte-de-gras' as TrainingGoal,
+  equipment: [] as TrainingEquipment[],
   fitnessLevel: null as string | null,
   experience: '',
   age: null as number | null,
@@ -32,6 +40,12 @@ const form = reactive({
 })
 
 const saving = ref(false)
+
+function toggleEquipment(equipment: TrainingEquipment): void {
+  form.equipment = form.equipment.includes(equipment)
+    ? form.equipment.filter((item) => item !== equipment)
+    : [...form.equipment, equipment]
+}
 
 onMounted(() => {
   const detected = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -57,6 +71,8 @@ async function submit() {
     await $fetch('/api/onboarding', {
       method: 'POST',
       body: {
+        goal: form.goal,
+        equipment: form.equipment,
         fitnessLevel: form.fitnessLevel,
         experience: form.experience || null,
         age: form.age,
@@ -119,6 +135,34 @@ async function submit() {
     </section>
 
     <section>
+      <label class="mb-2 block text-sm font-medium">Ton objectif principal</label>
+      <div class="grid grid-cols-1 gap-2">
+        <button
+          v-for="goal in TRAINING_GOAL_OPTIONS"
+          :key="goal.value"
+          type="button"
+          class="flex items-center justify-between rounded-xl border p-3 text-left transition-colors"
+          :class="
+            form.goal === goal.value
+              ? 'border-primary bg-primary/10'
+              : 'border-default hover:border-primary/40'
+          "
+          @click="form.goal = goal.value"
+        >
+          <div>
+            <p class="font-medium">{{ goal.label }}</p>
+            <p class="text-xs text-muted">{{ goal.hint }}</p>
+          </div>
+          <UIcon
+            v-if="form.goal === goal.value"
+            name="i-lucide-check-circle-2"
+            class="size-5 text-primary"
+          />
+        </button>
+      </div>
+    </section>
+
+    <section>
       <label class="mb-1.5 block text-sm font-medium">Ton expérience en boxe (optionnel)</label>
       <UTextarea
         v-model="form.experience"
@@ -136,6 +180,35 @@ async function submit() {
       <div>
         <label class="mb-1.5 block text-sm font-medium">Durée cible</label>
         <USelect v-model="form.targetDurationMin" :items="DURATIONS" />
+      </div>
+    </section>
+
+    <section>
+      <label class="mb-2 block text-sm font-medium">Ton matériel disponible</label>
+      <p class="mb-2 text-xs text-dimmed">Laisse tout décoché pour des séances sans matériel.</p>
+      <div class="grid grid-cols-1 gap-2">
+        <button
+          v-for="item in TRAINING_EQUIPMENT_OPTIONS"
+          :key="item.value"
+          type="button"
+          class="flex items-center justify-between rounded-xl border p-3 text-left transition-colors"
+          :class="
+            form.equipment.includes(item.value)
+              ? 'border-primary bg-primary/10'
+              : 'border-default hover:border-primary/40'
+          "
+          @click="toggleEquipment(item.value)"
+        >
+          <div>
+            <p class="font-medium">{{ item.label }}</p>
+            <p class="text-xs text-muted">{{ item.hint }}</p>
+          </div>
+          <UIcon
+            v-if="form.equipment.includes(item.value)"
+            name="i-lucide-check-circle-2"
+            class="size-5 text-primary"
+          />
+        </button>
       </div>
     </section>
 

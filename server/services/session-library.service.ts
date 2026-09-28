@@ -1,6 +1,7 @@
 import { matchingStrictExclusion } from '../../shared/exercise-preferences'
 import { BEGINNER_CURRICULUM } from '../../shared/curriculum'
 import type { SkillId } from '../../shared/curriculum'
+import type { TrainingEquipment } from '../../shared/profile-personalization'
 import { validateSessionPolicy } from '../../shared/session-policy'
 import {
   estimateExerciseSeconds,
@@ -42,13 +43,16 @@ interface ExerciseTemplate {
   name: string
   category: ExerciseCategory
   combo?: string | null
+  equipment?: TrainingEquipment[]
 }
 
 function exerciseTemplates(
   type: BlockType,
   focus: WorkoutFocus,
   selectedSkillId: SkillId | null,
+  availableEquipment: readonly TrainingEquipment[],
 ): ExerciseTemplate[] {
+  const available = new Set(availableEquipment)
   if (type === 'echauffement') {
     return [
       { name: 'Mobilité articulaire douce', category: 'mobilite' },
@@ -65,6 +69,25 @@ function exerciseTemplates(
   }
   if (type === 'cardio') {
     return [
+      ...(available.has('corde-a-sauter')
+        ? [
+            {
+              name: 'Corde à sauter à cadence contrôlée',
+              category: 'cardio' as const,
+              equipment: ['corde-a-sauter' as const],
+            },
+          ]
+        : []),
+      ...(available.has('sac-de-frappe')
+        ? [
+            {
+              name: 'Directs rythmés au sac de frappe',
+              category: 'cardio' as const,
+              combo: '1-2',
+              equipment: ['sac-de-frappe' as const],
+            },
+          ]
+        : []),
       { name: 'Marche cardio sans saut', category: 'cardio' },
       { name: 'Shadow boxing rythmé', category: 'cardio', combo: '1-2' },
       { name: 'Marche dynamique avec garde active', category: 'cardio' },
@@ -72,6 +95,24 @@ function exerciseTemplates(
   }
   if (type === 'renforcement') {
     return [
+      ...(available.has('elastiques')
+        ? [
+            {
+              name: 'Tirage contrôlé avec élastique',
+              category: 'renforcement' as const,
+              equipment: ['elastiques' as const],
+            },
+          ]
+        : []),
+      ...(available.has('halteres-legeres')
+        ? [
+            {
+              name: 'Rowing contrôlé avec haltères légères',
+              category: 'renforcement' as const,
+              equipment: ['halteres-legeres' as const],
+            },
+          ]
+        : []),
       { name: 'Gainage debout contrôlé', category: 'renforcement' },
       { name: 'Squats partiels contrôlés', category: 'renforcement' },
       { name: 'Maintien isométrique des bras', category: 'renforcement' },
@@ -81,6 +122,16 @@ function exerciseTemplates(
     ? SKILL_TECHNIQUE[selectedSkillId]
     : { name: `Respiration et relâchement — focus ${focus}`, combo: null }
   return [
+    ...(available.has('sac-de-frappe')
+      ? [
+          {
+            ...selected,
+            name: selected.name.replace('en shadow', 'au sac de frappe'),
+            category: 'technique' as const,
+            equipment: ['sac-de-frappe' as const],
+          },
+        ]
+      : []),
     { ...selected, category: 'technique' },
     { name: 'Respiration technique lente en shadow', category: 'technique', combo: null },
     { name: 'Coordination visuelle sans frappe', category: 'technique', combo: null },
@@ -100,6 +151,7 @@ function intervalExercise(template: ExerciseTemplate, totalSeconds: number): Exe
       'Reste dans une amplitude confortable, garde une respiration régulière et privilégie une exécution propre.',
     tips: ['Garde les épaules relâchées.', 'Arrête le mouvement en cas de douleur.'],
     commonMistakes: ['Accélérer au détriment de la posture.'],
+    equipment: template.equipment,
     skillIds: [],
     combo,
     comboExplanation: combo ? '1 = jab, 2 = cross, 3-4 = crochets, 5-6 = uppercuts.' : null,
@@ -117,12 +169,15 @@ function blockTitle(type: BlockType): string {
 }
 
 function policyForContext(context: GenerationContext) {
+  const equipment = context.prescription.personalization?.equipment ?? []
   return {
     targetDurationMin: context.dureeCibleMin,
     requestedCategory: context.prescription.category,
     requestedFocus: context.prescription.focus,
-    hasCustomFocus: Boolean(context.demande?.focusLibre),
+    hasCustomFocus: false,
     exercisePreferences: context.prescription.exercisePreferences,
+    availableEquipment: equipment,
+    prescribedBlockBudgets: context.prescription.blockBudgets,
   }
 }
 
@@ -203,19 +258,8 @@ export function findReusableBlocks(
   return selected
 }
 
-/**
- * Le profil renforcement historique réserve 20 % au bloc dédié, tandis que la politique
- * bloquante demande 35 % du cœur. Le fallback déplace donc 5 % de technique vers ce bloc.
- */
 function fallbackBudgets(context: GenerationContext): BlockBudgets {
-  const budgets = { ...context.prescription.blockBudgets }
-  if (context.prescription.category === 'renforcement') {
-    const required = Math.ceil((budgets.technique + budgets.cardio + budgets.renforcement) * 0.35)
-    const delta = Math.max(0, required - budgets.renforcement)
-    budgets.technique -= delta
-    budgets.renforcement += delta
-  }
-  return budgets
+  return { ...context.prescription.blockBudgets }
 }
 
 /** Fallback local, déterministe, sans matériel imposé et validé par la politique active. */
@@ -228,6 +272,7 @@ export function buildDeterministicFallbackSession(
     context.prescription.skillSelection.newSkillId ??
     context.prescription.skillSelection.consolidatedSkillIds[0] ??
     null
+  const equipment = context.prescription.personalization?.equipment ?? []
   let reusedBlockCount = 0
   const blocks: WorkoutBlock[] = []
 
@@ -245,12 +290,15 @@ export function buildDeterministicFallbackSession(
       continue
     }
 
-    const template = exerciseTemplates(type, context.prescription.focus, selectedSkillId).find(
-      (item) => {
-        const exercise = intervalExercise(item, budget)
-        return !matchingStrictExclusion(exercise, type, context.prescription.exercisePreferences)
-      },
-    )
+    const template = exerciseTemplates(
+      type,
+      context.prescription.focus,
+      selectedSkillId,
+      equipment,
+    ).find((item) => {
+      const exercise = intervalExercise(item, budget)
+      return !matchingStrictExclusion(exercise, type, context.prescription.exercisePreferences)
+    })
     if (!template) {
       throw new Error(`Aucun exercice local compatible pour le bloc ${type}.`)
     }

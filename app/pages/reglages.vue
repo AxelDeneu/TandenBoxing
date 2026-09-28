@@ -5,6 +5,12 @@ import {
   type ExercisePreferenceSummary,
   type PreferenceReasonCode,
 } from '~~/shared/exercise-preferences'
+import {
+  TRAINING_EQUIPMENT_OPTIONS,
+  TRAINING_GOAL_OPTIONS,
+  type TrainingEquipment,
+  type TrainingGoal,
+} from '~~/shared/profile-personalization'
 import { runtimeTimezones } from '~~/shared/schedule'
 import { requestErrorMessage, saveSettingsForms } from '~/utils/settings-save'
 
@@ -39,6 +45,7 @@ const FITNESS = [
   { label: 'Actif', value: 'actif' },
   { label: 'Sportif', value: 'sportif' },
 ]
+const GOALS = [...TRAINING_GOAL_OPTIONS]
 const PREFERENCE_REASONS = PREFERENCE_REASON_OPTIONS.map(({ value, label }) => ({ value, label }))
 
 const form = reactive({
@@ -51,6 +58,8 @@ const form = reactive({
 })
 
 const profileForm = reactive({
+  goal: (profileData.value?.goal ?? 'cardio-perte-de-gras') as TrainingGoal,
+  equipment: [...(profileData.value?.equipment ?? [])] as TrainingEquipment[],
   level: profileData.value?.level ?? 'debutant',
   fitnessLevel: profileData.value?.fitnessLevel ?? undefined,
   age: profileData.value?.age ?? null,
@@ -64,6 +73,12 @@ const editingPreference = ref<ExercisePreferenceSummary | null>(null)
 const preferenceToDelete = ref<ExercisePreferenceSummary | null>(null)
 const preferenceAction = ref<'liked' | 'disliked'>('liked')
 const preferenceReason = ref<PreferenceReasonCode | undefined>()
+
+function toggleEquipment(equipment: TrainingEquipment): void {
+  profileForm.equipment = profileForm.equipment.includes(equipment)
+    ? profileForm.equipment.filter((item) => item !== equipment)
+    : [...profileForm.equipment, equipment]
+}
 
 function editPreference(preference: ExercisePreferenceSummary) {
   editingPreference.value = preference
@@ -158,6 +173,8 @@ async function save() {
       (request, options) => $fetch(request, options),
       { ...form },
       {
+        goal: profileForm.goal,
+        equipment: profileForm.equipment,
         level: profileForm.level,
         fitnessLevel: profileForm.fitnessLevel ?? null,
         age: profileForm.age,
@@ -245,6 +262,13 @@ async function save() {
           </h2>
         </template>
         <div class="space-y-4">
+          <div>
+            <label class="mb-1.5 block text-sm font-medium">Objectif principal</label>
+            <USelect v-model="profileForm.goal" :items="GOALS" />
+            <p class="mt-1.5 text-xs text-dimmed">
+              {{ TRAINING_GOAL_OPTIONS.find((goal) => goal.value === profileForm.goal)?.hint }}
+            </p>
+          </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="mb-1.5 block text-sm font-medium">Niveau</label>
@@ -258,6 +282,33 @@ async function save() {
           <div>
             <label class="mb-1.5 block text-sm font-medium">Âge</label>
             <UInput v-model.number="profileForm.age" type="number" placeholder="ex : 32" />
+          </div>
+          <div>
+            <label class="mb-2 block text-sm font-medium">Matériel disponible</label>
+            <p class="mb-2 text-xs text-dimmed">
+              Laisse tout décoché pour des séances sans matériel.
+            </p>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <button
+                v-for="item in TRAINING_EQUIPMENT_OPTIONS"
+                :key="item.value"
+                type="button"
+                class="flex items-center justify-between rounded-lg border p-2.5 text-left transition-colors"
+                :class="
+                  profileForm.equipment.includes(item.value)
+                    ? 'border-primary bg-primary/10'
+                    : 'border-default hover:border-primary/40'
+                "
+                @click="toggleEquipment(item.value)"
+              >
+                <span class="text-sm">{{ item.label }}</span>
+                <UIcon
+                  v-if="profileForm.equipment.includes(item.value)"
+                  name="i-lucide-check"
+                  class="size-4 text-primary"
+                />
+              </button>
+            </div>
           </div>
           <div>
             <label class="mb-1.5 block text-sm font-medium">Blessures / limitations</label>

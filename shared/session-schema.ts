@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { BEGINNER_CURRICULUM, SKILL_IDS } from './curriculum'
+import { trainingEquipmentSchema } from './profile-personalization'
 
 /**
  * Contrat de sortie de l'IA (et de rendu côté client).
@@ -46,6 +47,11 @@ export const exerciseSchema = z.object({
   tips: z.array(z.string()).default([]),
   /** Erreurs fréquentes à éviter. */
   commonMistakes: z.array(z.string()).default([]),
+  /** Matériel réellement requis ; absent sur les séances historiques. */
+  equipment: z
+    .array(trainingEquipmentSchema)
+    .max(trainingEquipmentSchema.options.length)
+    .optional(),
   /** Compétences techniques réellement travaillées ; vide pour le cardio/mobilité générique. */
   skillIds: z.array(skillIdSchema).max(6).default([]),
   /** Combo en notation numérotée boxe anglaise, ex: "1-2", "1-1-2", "1-2-3-2". Null si N/A. */
@@ -163,35 +169,35 @@ export const SESSION_CATEGORY_META: Record<SessionCategory, CategoryMeta> = {
     icon: 'i-lucide-graduation-cap',
     iconClass: 'text-sky-400',
     intent:
-      "Découvrir ou décortiquer une technique / un combo. Gros bloc technique à intensité contrôlée, tempo lent, explications très détaillées ; cardio léger à modéré.",
+      'Découvrir ou décortiquer une technique / un combo. Gros bloc technique à intensité contrôlée, tempo lent, explications très détaillées ; cardio léger à modéré.',
   },
   renforcement: {
     label: 'Renforcement',
     icon: 'i-lucide-dumbbell',
     iconClass: 'text-amber-400',
     intent:
-      "Consolider des techniques DÉJÀ vues : plus de volume et de répétitions propres, intensité moyenne à haute, gainage/renforcement au poids du corps.",
+      'Consolider des techniques DÉJÀ vues : plus de volume et de répétitions propres, intensité moyenne à haute, gainage/renforcement au poids du corps.',
   },
   enchainement: {
     label: 'Enchaînement',
     icon: 'i-lucide-link',
     iconClass: 'text-violet-400',
     intent:
-      "Relier des combos connus en séquences fluides plus longues. Tempo élevé, transitions travaillées, pont entre technique et cardio.",
+      'Relier des combos connus en séquences fluides plus longues. Tempo élevé, transitions travaillées, pont entre technique et cardio.',
   },
   cardio: {
     label: 'Cardio',
     icon: 'i-lucide-heart-pulse',
     iconClass: 'text-rose-400',
     intent:
-      "Conditionnement et dépense énergétique : gros bloc HIIT au sac + poids du corps, peu de nouveauté technique.",
+      "Conditionnement et dépense énergétique : gros bloc cardio avec les modalités autorisées par l'inventaire, peu de nouveauté technique.",
   },
   recuperation: {
     label: 'Récupération',
     icon: 'i-lucide-leaf',
     iconClass: 'text-emerald-400',
     intent:
-      "Récupération active : mobilité, shadow très léger, respiration, étirements. AUCUN gros bloc HIIT, intensité basse.",
+      'Récupération active : mobilité, shadow très léger, respiration, étirements. AUCUN gros bloc HIIT, intensité basse.',
   },
 }
 

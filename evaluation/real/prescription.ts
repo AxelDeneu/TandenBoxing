@@ -27,6 +27,8 @@ export function buildSyntheticPrescription(evaluationCase: EvaluationCase) {
   return planWorkoutPrescription({
     today: context.date,
     targetDurationMin: context.targetDurationMin,
+    goal: context.profile.goal,
+    equipment: context.profile.equipment,
     constraints: context.profile.constraints.join(', ') || null,
     history: context.history.map((entry) => ({
       date: entry.date,

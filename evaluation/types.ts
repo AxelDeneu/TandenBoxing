@@ -1,5 +1,6 @@
 import type { SessionCategory, WorkoutFocus, WorkoutSession } from '../shared/session-schema'
 import type { GeneratorVersions } from '../shared/generator-version'
+import type { TrainingEquipment, TrainingGoal } from '../shared/profile-personalization'
 
 export type EvaluationTag =
   | 'beginner'
@@ -9,6 +10,7 @@ export type EvaluationTag =
   | 'neglected-focus'
   | 'explicit-request'
   | 'progression'
+  | 'personalization'
 
 export interface SyntheticHistoryEntry {
   date: string
@@ -26,7 +28,8 @@ export interface EvaluationContext {
   profile: {
     level: 'debutant'
     fitnessLevel: 'sedentaire' | 'actif' | 'sportif'
-    equipment: readonly string[]
+    goal: TrainingGoal
+    equipment: readonly TrainingEquipment[]
     constraints: readonly string[]
   }
   request?: {
