@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import { BODY_AREA_OPTIONS, type BodyArea } from '~~/shared/session-autoregulation'
+import { formatClock, formatDuration } from '~/utils/format'
 import type { WorkoutSession } from '~/utils/session'
 import {
   createSessionExecutionLifecycle,
@@ -15,6 +17,7 @@ const props = defineProps<{
 }>()
 
 const {
+  activeSession,
   phases,
   remaining,
   running,
@@ -44,8 +47,6 @@ const {
 
 const CIRC = 2 * Math.PI * 100
 
-// Sur mobile le guide est escamoté dans un slideover ; sur desktop il est toujours visible.
-const guideOpen = ref(false)
 const painOpen = ref(false)
 const painLocations = ref<BodyArea[]>([])
 const adaptingAction = ref<'too_hard' | 'too_easy' | 'pain' | null>(null)
@@ -65,10 +66,6 @@ function errorMessage(error: unknown): string {
   if (typeof candidate.data?.statusMessage === 'string') return candidate.data.statusMessage
   if (typeof candidate.message === 'string') return candidate.message
   return 'Erreur inconnue'
-}
-
-function openGuide(): void {
-  guideOpen.value = true
 }
 
 // Séance interrompue (rechargement, crash, appel entrant) : on laisse l'utilisateur trancher.
@@ -229,33 +226,40 @@ function acknowledgeSafetyNotice(): void {
 
 <template>
   <!--
-    Pas de z-index ici : les overlays Nuxt UI (slideover du guide, drawer du glossaire) sont
-    téléportés en fin de <body> sans z-index. Un z-50 sur ce plein écran les masquerait.
+    Pas de z-index ici : les overlays Nuxt UI (surfaces Détails/Adapter, drawer du glossaire) sont
+    téléportés en fin de <body>. Un z-50 sur ce plein écran les masquerait.
     La route timer est en `layout: false` → aucune barre de nav à recouvrir.
   -->
   <div
-    class="fixed inset-0 flex flex-col text-white transition-colors duration-500"
+    class="timer-shell fixed inset-0 flex flex-col overflow-x-hidden text-white"
     :class="kindStyle.bg"
   >
     <!-- Barre supérieure -->
-    <div class="flex items-center justify-between p-4">
+    <div class="timer-header flex shrink-0 items-center justify-between px-3 py-2 sm:px-4 sm:py-3">
       <UButton
         icon="i-lucide-x"
         color="neutral"
         variant="ghost"
-        class="text-white/80"
+        class="min-h-11 min-w-11 justify-center text-white/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         aria-label="Quitter"
         @click="requestExit"
       />
-      <p class="text-xs font-medium uppercase tracking-widest opacity-70">
+      <p class="min-w-0 truncate px-2 text-xs font-medium uppercase tracking-widest opacity-70">
         {{ current?.blockTitle }}
       </p>
-      <div class="w-9" />
+      <div class="w-11 shrink-0" aria-hidden="true" />
     </div>
 
     <!-- Progression globale -->
-    <div class="px-4">
-      <div class="h-1 w-full overflow-hidden rounded-full bg-white/10">
+    <div class="shrink-0 px-3 sm:px-4">
+      <div
+        class="h-1 w-full overflow-hidden rounded-full bg-white/10"
+        role="progressbar"
+        aria-label="Progression de la séance"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        :aria-valuenow="Math.round(overallProgress * 100)"
+      >
         <div
           class="h-full bg-white/70 transition-all duration-300"
           :style="{ width: overallProgress * 100 + '%' }"
@@ -267,15 +271,15 @@ function acknowledgeSafetyNotice(): void {
       </div>
     </div>
 
-    <!-- Phase en cours — chrono seul en mobile, chrono + guide côte à côte en ≥ lg -->
-    <div v-if="!finished" class="flex min-h-0 flex-1 flex-col lg:flex-row lg:gap-8 lg:px-8 lg:py-4">
-      <div class="flex flex-1 flex-col items-center justify-center gap-5 p-4 text-center">
+    <!-- La zone centrale peut défiler ; le dock reste un frère stable et ne la recouvre jamais. -->
+    <main v-if="!finished" class="timer-main min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div class="timer-stage flex min-h-full flex-col items-center justify-center text-center">
         <p class="text-sm font-bold uppercase tracking-[0.2em]" :class="kindStyle.accent">
           {{ kindStyle.label }}
         </p>
 
         <div class="relative flex items-center justify-center">
-          <svg viewBox="0 0 220 220" class="size-60 -rotate-90 sm:size-64">
+          <svg viewBox="0 0 220 220" class="timer-dial -rotate-90" aria-hidden="true">
             <circle
               cx="110"
               cy="110"
@@ -298,7 +302,7 @@ function acknowledgeSafetyNotice(): void {
             />
           </svg>
           <div class="absolute flex flex-col items-center">
-            <span class="font-mono text-7xl font-bold tabular-nums">{{
+            <span class="timer-clock font-mono font-bold tabular-nums">{{
               formatClock(remaining)
             }}</span>
             <span v-if="current?.round" class="mt-1 text-sm opacity-70">
@@ -308,145 +312,77 @@ function acknowledgeSafetyNotice(): void {
         </div>
 
         <div>
-          <h2 class="text-2xl font-bold leading-tight">{{ current?.label }}</h2>
-          <p v-if="current?.sublabel" class="mt-1 opacity-70">{{ current.sublabel }}</p>
+          <h2 class="text-pretty break-words text-2xl font-bold leading-tight">
+            {{ current?.label }}
+          </h2>
+          <p v-if="current?.sublabel" class="mt-1 break-words opacity-70">
+            {{ current.sublabel }}
+          </p>
         </div>
 
-        <p v-if="next" class="text-sm opacity-50">
-          <UIcon name="i-lucide-arrow-right" class="inline size-3.5 align-[-2px]" />
+        <p v-if="next" class="break-words text-sm opacity-50">
+          <UIcon
+            name="i-lucide-arrow-right"
+            class="inline size-3.5 align-[-2px]"
+            aria-hidden="true"
+          />
           Prochain : {{ next.label }}
         </p>
-
-        <!-- Accès au guide en mobile (sur desktop il est affiché en permanence à droite) -->
-        <UButton
-          icon="i-lucide-book-open"
-          color="neutral"
-          variant="soft"
-          size="sm"
-          label="Guide"
-          class="lg:hidden"
-          @click="openGuide"
-        />
       </div>
-
-      <!-- Guide de l'activité en cours (desktop) -->
-      <div class="hidden min-h-0 flex-1 items-center lg:flex">
-        <div class="max-h-full w-full max-w-[420px] overflow-y-auto">
-          <ExerciseGuidePanel :exercise="guideExercise" :next="nextExercise" />
-        </div>
-      </div>
-    </div>
+    </main>
 
     <!-- Fin de séance -->
-    <div v-else class="flex flex-1 flex-col items-center justify-center gap-6 p-6 text-center">
-      <UIcon name="i-lucide-party-popper" class="size-16 text-primary" />
-      <div>
-        <h2 class="text-3xl font-bold">Séance terminée&nbsp;!</h2>
-        <p class="mt-2 opacity-70">Durée réelle : {{ formatDuration(activeSeconds) }}</p>
-        <p v-if="replayMode" class="mt-1 text-sm opacity-60">
-          Répétition locale — l’historique terminé reste inchangé.
-        </p>
-      </div>
-      <div class="flex w-full max-w-xs flex-col gap-2">
-        <UButton
-          v-if="!replayMode && sessionStarted"
-          block
-          size="xl"
-          color="primary"
-          icon="i-lucide-clipboard-check"
-          :to="`/seance/${date}/feedback?duree=${Math.round(activeSeconds)}&blocsIgnores=${skippedBlockCount}`"
-        >
-          Noter la séance
-        </UButton>
-        <UButton block color="neutral" variant="soft" icon="i-lucide-rotate-ccw" @click="restart">
-          Refaire
-        </UButton>
-        <UButton block color="neutral" variant="ghost" class="text-white/70" @click="exit">
-          Quitter
-        </UButton>
-      </div>
-    </div>
-
-    <!-- Autorégulation structurée : seule la suite est modifiée. -->
-    <div v-if="!finished && !replayMode" class="px-4 pt-2">
-      <div class="mx-auto grid max-w-md grid-cols-3 gap-2">
-        <UButton
-          block
-          size="sm"
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-trending-down"
-          :loading="adaptingAction === 'too_hard'"
-          :disabled="adaptingAction !== null"
-          @click="adapt('too_hard')"
-        >
-          Trop difficile
-        </UButton>
-        <UButton
-          block
-          size="sm"
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-trending-up"
-          :loading="adaptingAction === 'too_easy'"
-          :disabled="adaptingAction !== null"
-          @click="adapt('too_easy')"
-        >
-          Trop facile
-        </UButton>
-        <UButton
-          block
-          size="sm"
-          color="warning"
-          variant="soft"
-          icon="i-lucide-shield-alert"
-          :disabled="adaptingAction !== null"
-          @click="requestPainAdaptation"
-        >
-          Douleur
-        </UButton>
-      </div>
-    </div>
-
-    <!-- Contrôles -->
-    <div v-if="!finished" class="flex items-center justify-center gap-8 p-6 pb-10">
-      <UButton
-        icon="i-lucide-skip-back"
-        size="xl"
-        color="neutral"
-        variant="soft"
-        aria-label="Précédent"
-        @click="prev"
-      />
-      <UButton
-        :icon="running ? 'i-lucide-pause' : 'i-lucide-play'"
-        size="xl"
-        color="primary"
-        class="size-16 justify-center rounded-full"
-        :aria-label="running ? 'Pause' : 'Démarrer'"
-        @click="toggleTimer"
-      />
-      <UButton
-        icon="i-lucide-skip-forward"
-        size="xl"
-        color="neutral"
-        variant="soft"
-        aria-label="Suivant"
-        @click="skip"
-      />
-    </div>
-
-    <!-- Guide escamotable (mobile) -->
-    <USlideover
-      v-model:open="guideOpen"
-      side="bottom"
-      title="Guide de l'exercice"
-      :ui="{ content: 'max-h-[85dvh]' }"
+    <main
+      v-else
+      class="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      aria-labelledby="timer-finished-title"
     >
-      <template #body>
-        <ExerciseGuidePanel :exercise="guideExercise" :next="nextExercise" />
-      </template>
-    </USlideover>
+      <div class="flex min-h-full flex-col items-center justify-center gap-6 p-6 text-center">
+        <UIcon name="i-lucide-party-popper" class="size-16 text-primary" aria-hidden="true" />
+        <div>
+          <h2 id="timer-finished-title" class="text-3xl font-bold">Séance terminée&nbsp;!</h2>
+          <p class="mt-2 opacity-70">Durée réelle : {{ formatDuration(activeSeconds) }}</p>
+          <p v-if="replayMode" class="mt-1 text-sm opacity-60">
+            Répétition locale — l’historique terminé reste inchangé.
+          </p>
+        </div>
+        <div class="flex w-full max-w-xs flex-col gap-2">
+          <UButton
+            v-if="!replayMode && sessionStarted"
+            block
+            size="xl"
+            color="primary"
+            icon="i-lucide-clipboard-check"
+            :to="`/seance/${date}/feedback?duree=${Math.round(activeSeconds)}&blocsIgnores=${skippedBlockCount}`"
+          >
+            Noter la séance
+          </UButton>
+          <UButton block color="neutral" variant="soft" icon="i-lucide-rotate-ccw" @click="restart">
+            Refaire
+          </UButton>
+          <UButton block color="neutral" variant="ghost" class="text-white/70" @click="exit">
+            Quitter
+          </UButton>
+        </div>
+      </div>
+    </main>
+
+    <TimerControls
+      v-if="!finished"
+      :running="running"
+      :replay-mode="replayMode"
+      :adapting-action="adaptingAction"
+      :session="activeSession"
+      :guide-exercise="guideExercise"
+      :next-exercise="nextExercise"
+      :current-block-index="current?.blockIndex ?? null"
+      :current-exercise-index="current?.exerciseIndex ?? null"
+      @previous="prev"
+      @toggle="toggleTimer"
+      @next="skip"
+      @adapt="adapt"
+      @pain="requestPainAdaptation"
+    />
 
     <!-- Reprise d'une séance interrompue — pas d'échappatoire : il faut choisir. -->
     <UModal
@@ -473,6 +409,7 @@ function acknowledgeSafetyNotice(): void {
       v-model:open="confirmExitOpen"
       title="Quitter la séance ?"
       description="Ta progression est gardée : tu pourras reprendre où tu en es en revenant."
+      :ui="{ close: 'min-h-11 min-w-11' }"
     >
       <template #footer>
         <div class="flex w-full justify-end gap-2">
@@ -486,6 +423,7 @@ function acknowledgeSafetyNotice(): void {
       v-model:open="painOpen"
       title="Où ressens-tu la douleur ?"
       description="Le mouvement courant sera arrêté et les mouvements incompatibles seront retirés uniquement de la suite."
+      :ui="{ close: 'min-h-11 min-w-11' }"
     >
       <template #body>
         <div class="flex flex-wrap gap-2">
@@ -493,7 +431,7 @@ function acknowledgeSafetyNotice(): void {
             v-for="area in BODY_AREA_OPTIONS"
             :key="area.value"
             type="button"
-            class="rounded-full border px-3 py-1.5 text-sm"
+            class="min-h-11 rounded-full border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             :class="
               painLocations.includes(area.value)
                 ? 'border-error bg-error/15 text-error'
@@ -543,3 +481,77 @@ function acknowledgeSafetyNotice(): void {
     <GlossaryDrawer />
   </div>
 </template>
+
+<style scoped>
+.timer-shell {
+  --timer-dial-size: clamp(144px, min(58vw, 36dvh), 256px);
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-left: env(safe-area-inset-left);
+  transition: background-color 500ms;
+}
+
+.timer-stage {
+  gap: clamp(0.625rem, 2.2dvh, 1.25rem);
+  padding: clamp(0.625rem, 2dvh, 1rem);
+}
+
+.timer-dial {
+  width: var(--timer-dial-size);
+  height: var(--timer-dial-size);
+}
+
+.timer-clock {
+  font-size: clamp(2.75rem, min(18vw, 9dvh), 4.5rem);
+  line-height: 1;
+}
+
+.timer-main {
+  scroll-padding-block: 1rem;
+}
+
+@media (max-height: 700px), (orientation: landscape) {
+  .timer-shell {
+    --timer-dial-size: clamp(116px, min(34vw, 29dvh), 176px);
+  }
+
+  .timer-header {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .timer-stage {
+    gap: clamp(0.375rem, 1.4dvh, 0.75rem);
+    padding-top: 0.375rem;
+    padding-bottom: 0.375rem;
+  }
+
+  .timer-clock {
+    font-size: clamp(2.25rem, min(14vw, 8dvh), 3.5rem);
+  }
+}
+
+@media (orientation: landscape) and (max-height: 568px) {
+  .timer-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    grid-template-rows: auto auto auto;
+    column-gap: clamp(1rem, 5vw, 3rem);
+    max-width: 58rem;
+    margin-inline: auto;
+    text-align: left;
+  }
+
+  .timer-stage > p:first-child,
+  .timer-stage > div:not(.relative),
+  .timer-stage > p:last-child {
+    grid-column: 2;
+  }
+
+  .timer-stage > .relative {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+  }
+}
+</style>
