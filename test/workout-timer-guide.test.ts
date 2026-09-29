@@ -76,6 +76,7 @@ describe('useWorkoutTimer — guide après adaptation', () => {
       timer.applyAdaptedSession(adapted, cause === 'pain')
 
       const expected = adapted.blocks[0]!.exercises[1]!
+      expect(timer.activeSession.value).toEqual(adapted)
       expect(timer.guideExercise.value).toMatchObject({
         name: expected.name,
         explanation: expected.explanation,

@@ -25,8 +25,8 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
   // Les props Vue sont des proxies, que structuredClone refuse. Le contrat séance est 100 % JSON.
   const cloneSession = (value: WorkoutSession): WorkoutSession =>
     JSON.parse(JSON.stringify(value)) as WorkoutSession
-  let activeSession = cloneSession(session)
-  const phases = reactive<TimerPhase[]>(buildTimerPhases(activeSession))
+  const activeSession = ref(cloneSession(session))
+  const phases = reactive<TimerPhase[]>(buildTimerPhases(activeSession.value))
   const storageKey = import.meta.client && date ? `tanden:timer:${date}` : null
 
   const index = ref(0)
@@ -53,11 +53,11 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
   /** Retrouve l'exercice source d'une phase (pour afficher son guide). */
   function exerciseOf(phase: TimerPhase | null): Exercise | null {
     if (!phase) return null
-    return activeSession.blocks[phase.blockIndex]?.exercises[phase.exerciseIndex] ?? null
+    return activeSession.value.blocks[phase.blockIndex]?.exercises[phase.exerciseIndex] ?? null
   }
   const currentExercise = computed<Exercise | null>(() => exerciseOf(current.value))
   const nextExercise = computed<Exercise | null>(() => exerciseOf(next.value))
-  const guide = computed(() => resolveTimerGuide(activeSession, phases, index.value))
+  const guide = computed(() => resolveTimerGuide(activeSession.value, phases, index.value))
   const guideExercise = computed<Exercise | null>(() => guide.value.exercise)
   const upcomingExercise = computed<Exercise | null>(() => guide.value.upcomingExercise)
   const phaseProgress = computed(() => {
@@ -318,7 +318,7 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
         }
       : null
     const nextPhases = buildTimerPhases(adapted)
-    activeSession = cloneSession(adapted)
+    activeSession.value = cloneSession(adapted)
     phases.splice(0, phases.length, ...nextPhases)
 
     if (skipCurrentExercise && source) {
@@ -350,6 +350,7 @@ export function useWorkoutTimer(session: WorkoutSession, date?: string) {
   })
 
   return {
+    activeSession,
     phases,
     index,
     remaining,
