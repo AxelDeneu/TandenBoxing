@@ -30,8 +30,8 @@
     "node": ">=26"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.109.0",
     "@nuxt/ui": "^4.11.2",
+    "@openrouter/sdk": "^1.4.2",
     "better-sqlite3": "^12.11.1",
     "chart.js": "^4.5.1",
     "croner": "^10.0.1",

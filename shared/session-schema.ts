@@ -10,7 +10,7 @@ import { trainingEquipmentSchema } from './profile-personalization'
  * (effort / repos / rounds) que le timer enchaîne automatiquement.
  *
  * Ce schéma est la source de vérité : il sert à la fois à
- *  - forcer la sortie structurée d'Anthropic (converti en JSON Schema),
+ *  - forcer la sortie structurée OpenRouter (converti en JSON Schema),
  *  - valider la réponse du modèle avant persistance,
  *  - typer la séance côté client (timer + affichage).
  */

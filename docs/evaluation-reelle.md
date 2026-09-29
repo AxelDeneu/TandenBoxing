@@ -16,8 +16,8 @@ sont pas valides.
 2. Choisir les scénarios. Sans `--case`, les 28 scénarios sont évalués ; la commande ne tronque
    jamais silencieusement le corpus pour rentrer dans un budget. Un cas appartenant à une séquence
    exige que tous ses prédécesseurs soient sélectionnés, afin de ne pas fausser la progression.
-3. Fixer répétitions, seed et température. L'adaptateur Anthropic applique la température, mais
-   déclare honnêtement que l'API ne supporte pas la seed. Chaque échantillon archive la valeur
+3. Fixer répétitions, seed et température. L'adaptateur OpenRouter applique la température, mais
+   n'annonce pas une seed portable entre tous les fournisseurs. Chaque échantillon archive la valeur
    demandée et si elle a réellement été appliquée.
 4. Fixer les six plafonds obligatoires : cas, appels, total de tokens, coût, durée murale et tokens
    de sortie par appel. Des bornes dures empêchent aussi une faute de frappe de lancer une campagne
@@ -32,7 +32,7 @@ Exemple avec une baseline déjà archivée :
 
 ```bash
 npm run eval:generator:real -- \
-  --candidate-model claude-opus-4-8 \
+  --candidate-model google/gemini-2.5-pro \
   --candidate-id prompt-v5-opus \
   --baseline-report ./evaluation/output/real/baseline/report.json \
   --repetitions 3 \
@@ -49,8 +49,11 @@ npm run eval:generator:real -- \
 
 Pour construire la première baseline, remplacer `--baseline-report` par `--baseline-model`; le
 budget doit alors couvrir baseline et candidat. `--provider-adapter` accepte un double local pour
-les tests. Le fournisseur par défaut lit seulement `NUXT_ANTHROPIC_API_KEY`; la clé n'entre jamais
-dans les rapports.
+les tests. Le fournisseur par défaut lit seulement `NUXT_OPENROUTER_API_KEY`; la clé n'entre jamais
+dans les rapports. Candidat et baseline acceptent tout slug compatible du catalogue OpenRouter, y
+compris des auteurs différents. Les appels exigent JSON Schema, refusent la collecte et imposent ZDR.
+Un adaptateur personnalisé doit exposer `generate(request)` et `getModelPricing(model)` afin que le
+préflight puisse borner le coût sans table tarifaire statique. Les doubles CI ne font aucun réseau.
 
 ## Provenance et archives
 
@@ -107,7 +110,7 @@ ni contrainte, ni nom d'exercice, ni identifiant de séance.
 | `replacementsPerSession`            | remplacements structurés                                       | compte/séance | moyenne       | `maintainer:coaching-experience` |
 | `adaptationsPerSession`             | adaptations avant/pendant effort                               | compte/séance | moyenne       | `maintainer:coaching-experience` |
 | `providerLatencyMillisecondsMean`   | latence fournisseur cumulée du job                             | millisecondes | moyenne       | `maintainer:ai-operations`       |
-| `estimatedCostUsdMean` / `Total`    | estimation selon le barème versionné dans le code              | USD           | moyenne/somme | `maintainer:ai-operations`       |
+| `estimatedCostUsdMean` / `Total`    | coût OpenRouter réel, sinon estimation du catalogue courant    | USD           | moyenne/somme | `maintainer:ai-operations`       |
 
 La fenêtre de toutes ces métriques est `[from, to]` incluse et repose sur `session_date`. Les
 définitions exécutables, unités, agrégations et propriétaires vivent dans
@@ -125,8 +128,8 @@ définitions exécutables, unités, agrégations et propriétaires vivent dans
   observations indépendantes.
 - Les résultats de production sont observationnels. Feedback manquant, abandon et auto-sélection
   créent des biais ; aucune corrélation hors ligne/terrain ne prouve une causalité.
-- Les coûts sont des estimations fondées sur `shared/ai-pricing.ts`, pas une facture. Un modèle sans
-  tarif connu est refusé au préflight plutôt que chiffré arbitrairement.
+- Le coût réel OpenRouter est privilégié après l'appel. Le préflight utilise les tarifs du catalogue
+  courant ; un modèle sans tarif connu est refusé plutôt que chiffré arbitrairement.
 
 ## Mise à jour du corpus
 

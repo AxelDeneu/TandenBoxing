@@ -8,8 +8,8 @@ export default defineEventHandler(() => {
   const s = getSettings()
   const today = todayIso(s.timezone)
   const isTrainingDay = s.trainingDays.includes(isoWeekday(today))
-  const { anthropicApiKey } = useRuntimeConfig()
-  const hasApiKey = Boolean(anthropicApiKey)
+  const { openrouterApiKey } = useRuntimeConfig()
+  const hasApiKey = Boolean(openrouterApiKey)
 
   const session = findSessionByDate(today) ?? null
   const dismissed = !session && isDateDismissed(today)

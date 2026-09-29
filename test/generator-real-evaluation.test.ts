@@ -29,6 +29,9 @@ function fakeProvider(counter: { calls: number }): RealGenerationProvider {
   return {
     id: 'fake-provider',
     capabilities: { seed: false, temperature: true },
+    async getModelPricing() {
+      return { prompt: 0.000001, completion: 0.000002, cacheRead: null, cacheWrite: null }
+    },
     async generate(request) {
       counter.calls += 1
       return {

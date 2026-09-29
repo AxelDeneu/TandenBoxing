@@ -15,7 +15,7 @@ beforeAll(async () => {
   }))
   vi.stubGlobal('todayIso', () => '2026-10-01')
   vi.stubGlobal('isoWeekday', () => 4)
-  vi.stubGlobal('useRuntimeConfig', () => ({ anthropicApiKey: 'test-key' }))
+  vi.stubGlobal('useRuntimeConfig', () => ({ openrouterApiKey: 'test-key' }))
   vi.stubGlobal('findSessionByDate', () => undefined)
   vi.stubGlobal('isDateDismissed', () => false)
   vi.stubGlobal('requestGenerationJob', requestGenerationJob)

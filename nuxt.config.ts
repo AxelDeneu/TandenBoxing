@@ -47,8 +47,11 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     // Server-only (override via NUXT_ prefixed env vars)
-    anthropicApiKey: '', // NUXT_ANTHROPIC_API_KEY
-    aiModel: 'claude-opus-4-8', // NUXT_AI_MODEL
+    openrouterApiKey: '', // NUXT_OPENROUTER_API_KEY
+    openrouterHttpReferer: '', // NUXT_OPENROUTER_HTTP_REFERER (optionnel)
+    openrouterAppTitle: 'Tanden Boxing', // NUXT_OPENROUTER_APP_TITLE
+    openrouterRequireZdr: '1', // NUXT_OPENROUTER_REQUIRE_ZDR=0 pour autoriser le routage sans ZDR
+    aiModel: 'anthropic/claude-opus-4.8', // NUXT_AI_MODEL
     timezone: 'Europe/Paris', // NUXT_TIMEZONE
     databasePath: './data/tanden.db', // NUXT_DATABASE_PATH
     disableCron: '', // NUXT_DISABLE_CRON=1 to disable the scheduler (e.g. in dev)

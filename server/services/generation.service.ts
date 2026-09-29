@@ -1,4 +1,3 @@
-import type AnthropicSDK from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { BEGINNER_CURRICULUM } from '../../shared/curriculum'
 import {
@@ -50,6 +49,7 @@ import {
 import type { SkillProgressionSnapshot } from '../../shared/skill-mastery'
 import type { VarietyAwareWorkoutPrescription } from '../../shared/workout-prescription'
 import type { Session } from '../database/schema'
+import type { StructuredGenerationResponse } from '../utils/openrouter'
 import { buildWorkoutPrescription } from './workout-prescription.service'
 import {
   blockTypesMissingFromReuse,
@@ -59,34 +59,33 @@ import {
   orderedGenerationBlocks,
 } from './session-library.service'
 
-/** Outil de sortie structurée imposé au modèle pour une séance complète. */
-const SESSION_TOOL = {
+/** Schéma de sortie structurée imposé au modèle pour une séance complète. */
+export const SESSION_OUTPUT = {
   name: 'proposer_seance',
   description:
     'Renvoie la séance de boxe du jour, entièrement structurée (blocs, exercices, intervalles) et prête à être exécutée.',
-  input_schema: z.toJSONSchema(workoutSessionSchema, {
+  schema: z.toJSONSchema(workoutSessionSchema, {
     target: 'draft-2020-12',
-  }) as AnthropicSDK.Tool.InputSchema,
+  }) as Record<string, unknown>,
 }
 
 /** Sortie réduite : le modèle ne renvoie que les blocs absents de la bibliothèque locale. */
-const PARTIAL_SESSION_TOOL = {
+export const PARTIAL_SESSION_OUTPUT = {
   name: 'proposer_parties_seance',
   description:
     'Renvoie les métadonnées de séance et uniquement les blocs manquants demandés par l’application.',
-  input_schema: z.toJSONSchema(
-    workoutSessionSchema.extend({ blocks: z.array(blockSchema).min(1) }),
-    { target: 'draft-2020-12' },
-  ) as AnthropicSDK.Tool.InputSchema,
+  schema: z.toJSONSchema(workoutSessionSchema.extend({ blocks: z.array(blockSchema).min(1) }), {
+    target: 'draft-2020-12',
+  }) as Record<string, unknown>,
 }
 
-/** Outil de sortie structurée pour un exercice unique (remplacement). */
-const EXERCISE_TOOL = {
+/** Schéma de sortie structurée pour un exercice unique (remplacement). */
+export const EXERCISE_OUTPUT = {
   name: 'proposer_exercice',
   description: 'Renvoie un exercice de remplacement, structuré et prêt à être exécuté.',
-  input_schema: z.toJSONSchema(exerciseSchema, {
+  schema: z.toJSONSchema(exerciseSchema, {
     target: 'draft-2020-12',
-  }) as AnthropicSDK.Tool.InputSchema,
+  }) as Record<string, unknown>,
 }
 
 /**
@@ -192,22 +191,11 @@ RÈGLES DE CONCEPTION
 - Variété : évite la monotonie d'une séance à l'autre tout en gardant une cohérence de progression.
 - "coachNote" : explique en 2-3 phrases motivantes POURQUOI cette séance aujourd'hui, en t'appuyant explicitement sur les états et faits de "progressionCompetences", la catégorie, le focus et les feedbacks. N'invente jamais un acquis.
 
-Réponds EXCLUSIVEMENT en appelant l'outil demandé : "proposer_seance" pour une séance complète, "proposer_exercice" pour un exercice de remplacement.`
-
-/**
- * Prompt système en bloc unique marqué pour le cache : ce préfixe (outils + système) est
- * strictement statique, donc réutilisable d'un appel à l'autre. Le cache Anthropic n'a d'effet
- * qu'entre appels rapprochés (TTL 5 min) : régénération, ajustement, remplacement d'exercice —
- * pas d'une génération quotidienne à l'autre. Il ne se déclenche qu'au-delà d'un préfixe minimal
- * (4096 tokens pour Opus 4.8) ; en deçà, aucun effet (mais aucun surcoût non plus).
- */
-const SYSTEM_BLOCKS: AnthropicSDK.TextBlockParam[] = [
-  { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
-]
+Réponds EXCLUSIVEMENT avec un objet JSON conforme au schéma strict fourni par l'application.`
 
 /** Enregistre la consommation de tokens d'un appel (best-effort : n'interrompt jamais la génération). */
 function recordUsage(
-  response: AnthropicSDK.Message,
+  response: StructuredGenerationResponse,
   kind: 'seance' | 'exercice' | 'ajustement',
   date: string | null,
 ): Pick<
@@ -215,16 +203,14 @@ function recordUsage(
   'inputTokens' | 'outputTokens' | 'cacheCreationTokens' | 'cacheReadTokens'
 > {
   const usage = {
-    inputTokens: response.usage.input_tokens ?? 0,
-    outputTokens: response.usage.output_tokens ?? 0,
-    cacheCreationTokens: response.usage.cache_creation_input_tokens ?? 0,
-    cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+    ...response.usage,
   }
   try {
     recordAiUsage({
       sessionDate: date,
       kind,
       model: response.model,
+      costUsd: response.costUsd,
       ...usage,
     })
   } catch (error) {
@@ -235,7 +221,7 @@ function recordUsage(
 
 function addResponseUsage(
   metrics: GenerationRunMetrics,
-  response: AnthropicSDK.Message,
+  response: StructuredGenerationResponse,
   kind: 'seance' | 'exercice' | 'ajustement',
   date: string | null,
   latencyMs: number,
@@ -246,6 +232,10 @@ function addResponseUsage(
   metrics.outputTokens += usage.outputTokens
   metrics.cacheCreationTokens += usage.cacheCreationTokens
   metrics.cacheReadTokens += usage.cacheReadTokens
+  metrics.costUsd =
+    metrics.costUsd === null || response.costUsd === null
+      ? null
+      : metrics.costUsd + response.costUsd
   metrics.providerLatencyMs += latencyMs
 }
 
@@ -271,25 +261,12 @@ export class GenerationExecutionError extends Error {
 
 function providerFailure(error: unknown): GenerationExecutionError {
   if (error instanceof GenerationExecutionError) return error
-  const status =
-    typeof error === 'object' && error && 'status' in error && typeof error.status === 'number'
-      ? error.status
-      : typeof error === 'object' &&
-          error &&
-          'statusCode' in error &&
-          typeof error.statusCode === 'number'
-        ? error.statusCode
-        : null
-  const permanent = status !== null && [400, 401, 403, 404, 422].includes(status)
+  const classified = classifyOpenRouterError(error)
   return new GenerationExecutionError(
-    permanent ? 'permanent' : 'temporary',
-    status ? `PROVIDER_HTTP_${status}` : 'PROVIDER_UNAVAILABLE',
-    permanent
-      ? 'Le fournisseur a refusé durablement la demande de génération.'
-      : 'Le fournisseur est temporairement indisponible.',
-    permanent
-      ? 'Vérifie la clé et le modèle configurés, puis relance la génération.'
-      : 'Une nouvelle tentative sera lancée automatiquement.',
+    classified.kind,
+    classified.code,
+    classified.message,
+    classified.actionableMessage,
     { cause: error },
   )
 }
@@ -706,7 +683,7 @@ function partialGenerationPrompt(
       2,
     ),
     '```',
-    `Appelle l’outil "${PARTIAL_SESSION_TOOL.name}". Son champ blocks ne doit contenir que ces blocs manquants ; les métadonnées décrivent la séance complète.`,
+    `Renvoie le JSON « ${PARTIAL_SESSION_OUTPUT.name} ». Son champ blocks ne doit contenir que ces blocs manquants ; les métadonnées décrivent la séance complète.`,
   ].join('\n')
 }
 
@@ -812,40 +789,40 @@ export async function generateSessionForDateDetailed(
     ? partialGenerationPrompt(basePrompt, context, reusableBlocks, missingBlockTypes)
     : basePrompt
 
-  const { anthropicApiKey } = useRuntimeConfig()
-  if (!anthropicApiKey) {
+  const { openrouterApiKey } = useRuntimeConfig()
+  if (!openrouterApiKey) {
     throw new GenerationExecutionError(
       'permanent',
       'PROVIDER_NOT_CONFIGURED',
       'Aucune clé fournisseur n’est configurée.',
-      'Configure NUXT_ANTHROPIC_API_KEY ou utilise la séance de secours locale.',
+      'Configure NUXT_OPENROUTER_API_KEY ou utilise la séance de secours locale.',
     )
   }
 
-  let client: ReturnType<typeof useAnthropic>
+  let catalogModel: Awaited<ReturnType<typeof requireAvailableOpenRouterModel>>
   try {
-    client = useAnthropic()
+    catalogModel = await requireAvailableOpenRouterModel(settingsRow.aiModel)
   } catch (error) {
     throw providerFailure(error)
   }
-  const selectedTool = partial ? PARTIAL_SESSION_TOOL : SESSION_TOOL
-  let response: AnthropicSDK.Message
+  const selectedOutput = partial ? PARTIAL_SESSION_OUTPUT : SESSION_OUTPUT
+  let response: StructuredGenerationResponse
   const providerStartedAt = Date.now()
   try {
-    response = await client.messages.create(
-      {
-        model: settingsRow.aiModel,
-        max_tokens: partial ? 9_000 : 12_000,
-        system: SYSTEM_BLOCKS,
-        tools: [selectedTool],
-        tool_choice: { type: 'tool', name: selectedTool.name },
-        messages: [{ role: 'user', content: userPrompt }],
-      },
-      { timeout: 120_000, maxRetries: 0 },
-    )
+    response = await generateStructuredOutput({
+      model: settingsRow.aiModel,
+      maxOutputTokens: partial ? 9_000 : 12_000,
+      systemPrompt: SYSTEM_PROMPT,
+      userPrompt,
+      outputSchema: selectedOutput,
+      pricing: catalogModel.pricing,
+      timeoutMs: 120_000,
+      maxRetries: 0,
+    })
   } catch (error) {
-    console.error('[generation] Appel Anthropic échoué :', error)
-    throw providerFailure(error)
+    const classified = classifyOpenRouterError(error)
+    console.error('[generation] Appel OpenRouter échoué :', classified.code)
+    throw providerFailure(classified)
   }
   addResponseUsage(
     metrics,
@@ -855,20 +832,10 @@ export async function generateSessionForDateDetailed(
     Date.now() - providerStartedAt,
   )
 
-  const toolUse = response.content.find(
-    (block): block is AnthropicSDK.ToolUseBlock => block.type === 'tool_use',
-  )
-  if (!toolUse) {
-    throw new GenerationExecutionError(
-      'temporary',
-      'MODEL_TOOL_MISSING',
-      "Le modèle n'a pas renvoyé de séance exploitable.",
-      'Une nouvelle tentative sera lancée automatiquement.',
-    )
-  }
   const initialCandidate = partial
-    ? preparePartialCandidate(toolUse.input, reusableBlocks, missingBlockTypes)
-    : toolUse.input
+    ? preparePartialCandidate(response.output, reusableBlocks, missingBlockTypes)
+    : response.output
+  let resolvedModel = response.model
 
   let session: WorkoutSession
   try {
@@ -910,26 +877,26 @@ export async function generateSessionForDateDetailed(
           '```json',
           JSON.stringify(candidate, null, 2),
           '```',
-          `Appelle l'outil "proposer_seance" avec la séance corrigée complète.`,
+          `Renvoie la séance corrigée complète comme objet JSON strict.`,
         ].join('\n')
 
-        let correctionResponse: AnthropicSDK.Message
+        let correctionResponse: StructuredGenerationResponse
         const correctionStartedAt = Date.now()
         try {
-          correctionResponse = await client.messages.create(
-            {
-              model: settingsRow.aiModel,
-              max_tokens: 12_000,
-              system: SYSTEM_BLOCKS,
-              tools: [SESSION_TOOL],
-              tool_choice: { type: 'tool', name: SESSION_TOOL.name },
-              messages: [{ role: 'user', content: correctionPrompt }],
-            },
-            { timeout: 120_000, maxRetries: 0 },
-          )
+          correctionResponse = await generateStructuredOutput({
+            model: settingsRow.aiModel,
+            maxOutputTokens: 12_000,
+            systemPrompt: SYSTEM_PROMPT,
+            userPrompt: correctionPrompt,
+            outputSchema: SESSION_OUTPUT,
+            pricing: catalogModel.pricing,
+            timeoutMs: 120_000,
+            maxRetries: 0,
+          })
         } catch (error) {
-          console.error('[generation] Correction Anthropic échouée :', error)
-          throw providerFailure(error)
+          const classified = classifyOpenRouterError(error)
+          console.error('[generation] Correction OpenRouter échouée :', classified.code)
+          throw providerFailure(classified)
         }
         addResponseUsage(
           metrics,
@@ -938,9 +905,8 @@ export async function generateSessionForDateDetailed(
           date,
           Date.now() - correctionStartedAt,
         )
-        return correctionResponse.content.find(
-          (block): block is AnthropicSDK.ToolUseBlock => block.type === 'tool_use',
-        )?.input
+        resolvedModel = correctionResponse.model
+        return correctionResponse.output
       },
     })
   } catch (error) {
@@ -962,6 +928,7 @@ export async function generateSessionForDateDetailed(
     session: persistResolvedSession(date, session, context, settingsRow, {
       source: options.source === 'prefetch' ? 'prefetch' : 'model',
       contextHash: options.contextHash,
+      aiModel: resolvedModel,
     }),
     metrics,
   }
@@ -1046,40 +1013,33 @@ export async function generateReplacementExercise(
     '```',
     `Objectif du profil : ${personalization.goal} (${goalLabel(personalization.goal)}). Matériel autorisé : ${equipmentPromptList(personalization.equipment)}.`,
     `Contraintes : reste cohérent avec le bloc et le même type d'effort, garde une durée d'intervalles similaire, n'utilise aucun matériel absent de cet inventaire et respecte le niveau débutant. Renseigne "equipment" avec les identifiants exacts requis. Respecte toutes les exclusions strictes. Les préférences pondérées viennent après la sécurité, les prérequis, la progression et la variété. Évite un exercice déjà présent dans la séance. Renseigne ses skillIds stables ; conserve la cible pédagogique de l'exercice remplacé sauf si le motif demande de la changer.`,
-    `Appelle l'outil "proposer_exercice".`,
+    `Renvoie exclusivement l'exercice comme objet JSON strict.`,
   ].join('\n')
 
-  const client = useAnthropic()
-  let response
+  let response: StructuredGenerationResponse
   try {
-    response = await client.messages.create(
-      {
-        model,
-        max_tokens: 2000,
-        system: SYSTEM_BLOCKS,
-        tools: [EXERCISE_TOOL],
-        tool_choice: { type: 'tool', name: EXERCISE_TOOL.name },
-        messages: [{ role: 'user', content: userPrompt }],
-      },
-      { timeout: 60_000, maxRetries: 1 },
-    )
+    const catalogModel = await requireAvailableOpenRouterModel(model)
+    response = await generateStructuredOutput({
+      model,
+      maxOutputTokens: 2_000,
+      systemPrompt: SYSTEM_PROMPT,
+      userPrompt,
+      outputSchema: EXERCISE_OUTPUT,
+      pricing: catalogModel.pricing,
+      timeoutMs: 60_000,
+      maxRetries: 1,
+    })
   } catch (error) {
-    console.error("[generation] Remplacement d'exercice échoué :", error)
+    const classified = classifyOpenRouterError(error)
+    console.error("[generation] Remplacement d'exercice échoué :", classified.code)
     throw createError({
-      statusCode: 502,
-      statusMessage: "Le remplacement de l'exercice a échoué. Réessaie.",
+      statusCode: classified.kind === 'permanent' ? 400 : 502,
+      statusMessage: classified.actionableMessage,
     })
   }
   recordUsage(response, 'exercice', null)
 
-  const toolUse = response.content.find(
-    (block): block is AnthropicSDK.ToolUseBlock => block.type === 'tool_use',
-  )
-  if (!toolUse) {
-    throw createError({ statusCode: 502, statusMessage: "Le modèle n'a pas proposé d'exercice." })
-  }
-
-  const parsed = exerciseSchema.safeParse(toolUse.input)
+  const parsed = exerciseSchema.safeParse(response.output)
   if (!parsed.success) {
     console.error('[generation] Exercice de remplacement invalide :', parsed.error.issues)
     throw createError({

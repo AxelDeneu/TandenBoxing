@@ -12,6 +12,8 @@ import {
   type TrainingGoal,
 } from '~~/shared/profile-personalization'
 import { runtimeTimezones } from '~~/shared/schedule'
+import type { OpenRouterModelCatalogResponse } from '~~/shared/openrouter-models'
+import { buildModelSelectItems } from '~/utils/model-catalog'
 import { requestErrorMessage, saveSettingsForms } from '~/utils/settings-save'
 
 useHead({ title: 'Réglages' })
@@ -19,17 +21,20 @@ useHead({ title: 'Réglages' })
 const toast = useToast()
 
 const { data: settingsData } = await useFetch('/api/settings', { key: 'settings' })
+const {
+  data: modelCatalog,
+  status: modelCatalogStatus,
+  error: modelCatalogError,
+  refresh: refreshModelCatalog,
+} = await useFetch<OpenRouterModelCatalogResponse>('/api/ai/models', {
+  key: 'openrouter-models',
+})
 const { data: profileData } = await useFetch('/api/profile', { key: 'profile' })
 const { data: preferenceData, refresh: refreshPreferences } = await useFetch<{
   asOfDate: string
   preferences: ExercisePreferenceSummary[]
 }>('/api/preferences', { key: 'exercise-preferences' })
 
-const MODELS = [
-  { label: 'Opus 4.8 — qualité max', value: 'claude-opus-4-8' },
-  { label: 'Sonnet 5 — équilibré', value: 'claude-sonnet-5' },
-  { label: 'Haiku 4.5 — économique', value: 'claude-haiku-4-5-20251001' },
-]
 const DURATIONS = [30, 35, 40, 45, 50, 60].map((v) => ({ label: `${v} min`, value: v }))
 const TIMEZONES = runtimeTimezones(settingsData.value?.timezone).map((value) => ({
   label: value,
@@ -53,7 +58,7 @@ const form = reactive({
   generationTime: settingsData.value?.generationTime ?? '07:00',
   targetDurationMin: settingsData.value?.targetDurationMin ?? 45,
   timezone: settingsData.value?.timezone ?? 'Europe/Paris',
-  aiModel: settingsData.value?.aiModel ?? 'claude-opus-4-8',
+  aiModel: settingsData.value?.aiModel ?? '',
   weightTrackingEnabled: settingsData.value?.weightTrackingEnabled ?? true,
 })
 
@@ -73,6 +78,20 @@ const editingPreference = ref<ExercisePreferenceSummary | null>(null)
 const preferenceToDelete = ref<ExercisePreferenceSummary | null>(null)
 const preferenceAction = ref<'liked' | 'disliked'>('liked')
 const preferenceReason = ref<PreferenceReasonCode | undefined>()
+
+const modelItems = computed(() =>
+  buildModelSelectItems(
+    modelCatalog.value?.models ?? [],
+    form.aiModel,
+    modelCatalogStatus.value === 'success' ? 'available' : 'unavailable',
+  ),
+)
+const savedModelUnavailable = computed(
+  () =>
+    modelCatalogStatus.value === 'success' &&
+    Boolean(form.aiModel) &&
+    !modelCatalog.value?.models.some((model) => model.id === form.aiModel),
+)
 
 function toggleEquipment(equipment: TrainingEquipment): void {
   profileForm.equipment = profileForm.equipment.includes(equipment)
@@ -246,11 +265,53 @@ async function save() {
           </h2>
         </template>
         <div>
-          <label class="mb-1.5 block text-sm font-medium">Modèle Anthropic</label>
-          <USelect v-model="form.aiModel" :items="MODELS" />
+          <label class="mb-1.5 block text-sm font-medium">Modèle OpenRouter</label>
+          <USelectMenu
+            v-model="form.aiModel"
+            :items="modelItems"
+            value-key="value"
+            searchable
+            :loading="modelCatalogStatus === 'pending'"
+            :disabled="!modelItems.length"
+            class="w-full"
+          />
           <p class="mt-1.5 text-xs text-dimmed">
-            1 génération par jour — le coût reste minime même avec Opus.
+            Seuls les modèles texte avec JSON Schema strict, sortie ≥ 12 000 tokens et routage privé
+            compatible sont proposés.
           </p>
+          <UAlert
+            v-if="modelCatalogError"
+            class="mt-3"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-cloud-off"
+            title="Catalogue OpenRouter indisponible"
+            description="Le modèle enregistré reste sélectionné et les autres préférences peuvent être sauvegardées. Sa disponibilité n’est pas vérifiée."
+          >
+            <template #actions>
+              <UButton size="xs" color="warning" variant="soft" @click="refreshModelCatalog()">
+                Réessayer
+              </UButton>
+            </template>
+          </UAlert>
+          <UAlert
+            v-else-if="modelCatalogStatus === 'success' && !modelCatalog?.models.length"
+            class="mt-3"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-list-x"
+            title="Aucun modèle compatible"
+            description="La sélection enregistrée est conservée. Vérifie les restrictions et la politique ZDR de la clé OpenRouter."
+          />
+          <UAlert
+            v-else-if="savedModelUnavailable"
+            class="mt-3"
+            color="error"
+            variant="soft"
+            icon="i-lucide-triangle-alert"
+            title="Modèle enregistré indisponible"
+            description="Choisis un modèle disponible avant la prochaine génération. L’historique existant reste inchangé."
+          />
         </div>
       </UCard>
 

@@ -25,6 +25,7 @@ import type {
   GenerationReuseKind,
 } from '../../shared/generation-jobs'
 import type { WorkoutSession } from '../../shared/session-schema'
+import { DEFAULT_AI_MODEL } from '../../shared/openrouter-models'
 
 const timestamps = {
   createdAt: integer('created_at', { mode: 'timestamp' })
@@ -50,7 +51,7 @@ export const settings = sqliteTable('settings', {
   /** Durée cible d'une séance (minutes). */
   targetDurationMin: integer('target_duration_min').notNull().default(45),
   timezone: text('timezone').notNull().default('Europe/Paris'),
-  aiModel: text('ai_model').notNull().default('claude-opus-4-8'),
+  aiModel: text('ai_model').notNull().default(DEFAULT_AI_MODEL),
   weightTrackingEnabled: integer('weight_tracking_enabled', { mode: 'boolean' })
     .notNull()
     .default(true),
@@ -313,7 +314,7 @@ export const dismissedDates = sqliteTable('dismissed_dates', {
 })
 
 /**
- * Journal des appels au modèle (append-only) : un enregistrement par appel Anthropic.
+ * Journal des appels au modèle (append-only) : un enregistrement par appel OpenRouter.
  * Survit à la régénération d'une séance et couvre tous les types d'appel (séance,
  * exercice, ajustement). Sert la vue « conso » (agrégats par mois / modèle / type).
  */
@@ -326,10 +327,12 @@ export const aiUsage = sqliteTable('ai_usage', {
   model: text('model').notNull(),
   inputTokens: integer('input_tokens').notNull().default(0),
   outputTokens: integer('output_tokens').notNull().default(0),
-  /** Tokens écrits dans le cache (facturés ~1,25×). */
+  /** Tokens écrits dans le cache, lorsqu'ils sont détaillés par le fournisseur. */
   cacheCreationTokens: integer('cache_creation_tokens').notNull().default(0),
-  /** Tokens servis depuis le cache (facturés ~0,1×). */
+  /** Tokens servis depuis le cache, lorsqu'ils sont détaillés par le fournisseur. */
   cacheReadTokens: integer('cache_read_tokens').notNull().default(0),
+  /** Coût réel OpenRouter, ou estimation calculée depuis le catalogue au moment de l'appel. */
+  costUsd: real('cost_usd'),
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),

@@ -37,7 +37,7 @@ beforeAll(async () => {
   vi.stubGlobal('isGenerating', () => false)
   vi.stubGlobal('findLatestGenerationJob', () => undefined)
   vi.stubGlobal('toPublicGenerationJob', (job: unknown) => job)
-  vi.stubGlobal('useRuntimeConfig', () => ({ anthropicApiKey: '' }))
+  vi.stubGlobal('useRuntimeConfig', () => ({ openrouterApiKey: '' }))
 
   generateHandler = (await import('../server/api/sessions/generate.post')).default as Handler
   adjustHandler = (await import('../server/api/sessions/[date]/adjust.post')).default as Handler

@@ -6,7 +6,7 @@ fatigue, séances sautées, contraintes physiques génériques, focus négligés
 explicites et deux séquences de progression.
 
 Le corpus ne lit jamais `data/tanden.db`, ne consulte aucune variable secrète et ne charge
-pas le client Anthropic. Les sorties de référence sont elles aussi synthétiques et figées.
+pas le client OpenRouter. Les sorties de référence sont elles aussi synthétiques et figées.
 
 ## Exécution locale
 

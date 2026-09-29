@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { modelLabel } from '~~/shared/ai-pricing'
-
 useHead({ title: 'Consommation IA' })
 
 const { data } = await useFetch('/api/usage', { key: 'usage' })
@@ -149,7 +147,7 @@ const cacheHitRate = computed(() => {
             :key="row.model"
             class="flex items-center justify-between gap-3 text-sm"
           >
-            <span class="font-medium">{{ modelLabel(row.model) }}</span>
+            <span class="font-medium">{{ row.model }}</span>
             <span class="text-muted">
               {{ row.calls }} appels · {{ formatTokens(row.inputTokens + row.outputTokens) }} tokens
               ·

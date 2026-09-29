@@ -25,6 +25,8 @@ export interface GenerationRunMetrics {
   outputTokens: number
   cacheCreationTokens: number
   cacheReadTokens: number
+  /** Coût réel OpenRouter, ou estimation issue du catalogue ; null si indisponible. */
+  costUsd: number | null
   providerLatencyMs: number
   reuseKind: GenerationReuseKind
   reusedBlockCount: number
@@ -76,6 +78,7 @@ export function emptyGenerationRunMetrics(): GenerationRunMetrics {
     outputTokens: 0,
     cacheCreationTokens: 0,
     cacheReadTokens: 0,
+    costUsd: 0,
     providerLatencyMs: 0,
     reuseKind: 'none',
     reusedBlockCount: 0,

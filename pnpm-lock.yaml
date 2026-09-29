@@ -7,9 +7,9 @@ settings:
 importers:
   .:
     dependencies:
-      '@anthropic-ai/sdk':
-        specifier: ^0.109.0
-        version: 0.109.0(zod@4.4.3)
+      '@openrouter/sdk':
+        specifier: ^1.4.2
+        version: 1.4.2
       '@nuxt/ui':
         specifier: ^4.9.0
         version: 4.9.0(ef1882dfd58869c4ac099c751984f81c)
@@ -67,18 +67,6 @@ packages:
       {
         integrity: sha512-MGQsmw10ZyI+EJo45CdSER4zEb+p31LpDAFp2Z3gkSd1yqVZGi0Ebx++YTEMonJy4oChEMLsxZ64j8FH6sSqtQ==,
       }
-
-  '@anthropic-ai/sdk@0.109.0':
-    resolution:
-      {
-        integrity: sha512-y7P4eLyW5uNut4fXpOUEHqhJwx7dnxrWAfCQE4Lcgm0hSFQuIeHa7CWEKE5dFolEjQJE/RFKkppjri05r2OK/Q==,
-      }
-    hasBin: true
-    peerDependencies:
-      zod: ^3.25.0 || ^4.0.0
-    peerDependenciesMeta:
-      zod:
-        optional: true
 
   '@apideck/better-ajv-errors@0.3.7':
     resolution:
@@ -2908,6 +2896,12 @@ packages:
     engines: { node: ^20.19.0 || >=22.12.0 }
     cpu: [x64]
     os: [win32]
+
+  '@openrouter/sdk@1.4.2':
+    resolution:
+      {
+        integrity: sha512-yWm1g17cCoWSw4KJFhUZ0+cuuo4VsbbBwZaEl+LXtNEno5q9b4hSo+N9F59inXiy8Y5TDKBRQoQPSbVeuLj8/Q==,
+      }
 
   '@oxc-project/types@0.133.0':
     resolution:
@@ -9835,13 +9829,6 @@ snapshots:
       package-manager-detector: 1.7.0
       tinyexec: 1.2.4
 
-  '@anthropic-ai/sdk@0.109.0(zod@4.4.3)':
-    dependencies:
-      json-schema-to-ts: 3.1.1
-      standardwebhooks: 1.0.0
-    optionalDependencies:
-      zod: 4.4.3
-
   '@apideck/better-ajv-errors@0.3.7(ajv@8.20.0)':
     dependencies:
       ajv: 8.20.0
@@ -11793,6 +11780,10 @@ snapshots:
 
   '@oxc-parser/binding-win32-x64-msvc@0.133.0':
     optional: true
+
+  '@openrouter/sdk@1.4.2':
+    dependencies:
+      zod: 4.4.3
 
   '@oxc-project/types@0.133.0': {}
 

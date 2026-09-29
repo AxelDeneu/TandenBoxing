@@ -1,4 +1,4 @@
-import { estimateCostUsd, type TokenUsage } from '../../shared/ai-pricing'
+import { estimateCostUsd, type ModelPricing, type TokenUsage } from '../../shared/ai-pricing'
 import type { AiUsage } from '../database/schema'
 
 interface UsageBucket extends TokenUsage {
@@ -18,24 +18,39 @@ function emptyBucket(): UsageBucket {
 }
 
 /** Ajoute un appel à un bucket, en cumulant le coût (null si un modèle inconnu casse l'estimation). */
-function addToBucket(bucket: UsageBucket, row: AiUsage): void {
+function addToBucket(
+  bucket: UsageBucket,
+  row: AiUsage,
+  pricingByModel: ReadonlyMap<string, ModelPricing>,
+): void {
   bucket.calls += 1
   bucket.inputTokens += row.inputTokens
   bucket.outputTokens += row.outputTokens
   bucket.cacheCreationTokens += row.cacheCreationTokens
   bucket.cacheReadTokens += row.cacheReadTokens
-  const cost = estimateCostUsd(row.model, row)
+  const pricing = pricingByModel.get(row.model)
+  const cost = row.costUsd ?? (pricing ? estimateCostUsd(pricing, row) : null)
   if (cost === null || bucket.costUsd === null) bucket.costUsd = null
   else bucket.costUsd += cost
 }
 
 /** Agrégats de consommation IA pour la vue « conso » : total, mois courant, par modèle, par type. */
-export function getUsageStats() {
+export async function getUsageStats() {
   const s = getSettings()
   const today = todayIso(s.timezone)
   const monthPrefix = today.slice(0, 7) // YYYY-MM
 
   const rows = listAiUsage(1000)
+  let pricingByModel = new Map<string, ModelPricing>()
+  try {
+    const catalog = await getOpenRouterModelCatalog()
+    pricingByModel = new Map(catalog.models.map((model) => [model.id, model.pricing]))
+  } catch (error) {
+    console.error(
+      '[usage] Catalogue de prix OpenRouter indisponible :',
+      classifyOpenRouterError(error).code,
+    )
+  }
 
   const total = emptyBucket()
   const thisMonth = emptyBucket()
@@ -43,17 +58,17 @@ export function getUsageStats() {
   const byKind: Record<string, UsageBucket> = {}
 
   for (const row of rows) {
-    addToBucket(total, row)
+    addToBucket(total, row, pricingByModel)
 
     // La date de la ligne est un timestamp ; on la ramène au fuseau utilisateur.
     const rowMonth = isoDateInTz(row.createdAt, s.timezone).slice(0, 7)
-    if (rowMonth === monthPrefix) addToBucket(thisMonth, row)
+    if (rowMonth === monthPrefix) addToBucket(thisMonth, row, pricingByModel)
 
     byModel[row.model] ??= emptyBucket()
-    addToBucket(byModel[row.model]!, row)
+    addToBucket(byModel[row.model]!, row, pricingByModel)
 
     byKind[row.kind] ??= emptyBucket()
-    addToBucket(byKind[row.kind]!, row)
+    addToBucket(byKind[row.kind]!, row, pricingByModel)
   }
 
   const generationRows = listGenerationJobs(1_000)

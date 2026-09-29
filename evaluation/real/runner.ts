@@ -143,36 +143,46 @@ function publicUsage(usage: MutableUsage, now: number): RealEvaluationUsage {
   }
 }
 
-function responseCost(model: string, usage: RealProviderUsage): number {
-  const cost = estimateCostUsd(model, usage)
-  if (cost == null) {
+async function responseCost(
+  provider: RealGenerationProvider,
+  model: string,
+  usage: RealProviderUsage,
+): Promise<number> {
+  if (typeof usage.costUsd === 'number' && Number.isFinite(usage.costUsd)) return usage.costUsd
+  const pricing = await provider.getModelPricing(model)
+  if (!pricing) {
     throw new RealEvaluationBudgetError(
       `Tarif inconnu pour ${model}; impossible de garantir le budget de coût.`,
     )
   }
-  return cost
+  return estimateCostUsd(pricing, usage)
 }
 
 function totalTokens(usage: RealProviderUsage): number {
   return usage.inputTokens + usage.outputTokens + usage.cacheCreationTokens + usage.cacheReadTokens
 }
 
-function plannedCost(model: string, inputTokens: number, outputTokens: number): number {
-  const cost = estimateCostUsd(model, {
+async function plannedCost(
+  provider: RealGenerationProvider,
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+): Promise<number> {
+  const pricing = await provider.getModelPricing(model)
+  if (!pricing) {
+    throw new RealEvaluationBudgetError(
+      `Tarif inconnu pour ${model}; impossible de vérifier le coût maximal avant appel.`,
+    )
+  }
+  return estimateCostUsd(pricing, {
     inputTokens,
     outputTokens,
     cacheCreationTokens: 0,
     cacheReadTokens: 0,
   })
-  if (cost == null) {
-    throw new RealEvaluationBudgetError(
-      `Tarif inconnu pour ${model}; impossible de vérifier le coût maximal avant appel.`,
-    )
-  }
-  return cost
 }
 
-function assertPreflight(
+async function assertPreflight(
   input: RealEvaluationInput,
   cases: readonly EvaluationCase[],
   baselineNeedsCalls: boolean,
@@ -203,7 +213,12 @@ function assertPreflight(
       const inputTokens = Buffer.byteLength(SYSTEM_PROMPT) + Buffer.byteLength(prompt)
       maximumTokens += (inputTokens + budget.maxOutputTokensPerCall) * repetitions
       maximumCost +=
-        plannedCost(config.model, inputTokens, budget.maxOutputTokensPerCall) * repetitions
+        (await plannedCost(
+          input.provider,
+          config.model,
+          inputTokens,
+          budget.maxOutputTokensPerCall,
+        )) * repetitions
     }
   }
   if (maximumTokens > budget.maxTotalTokens) {
@@ -305,7 +320,7 @@ async function runCandidate(
         maxOutputTokens: input.budget.maxOutputTokensPerCall,
         timeoutMs: remainingMs,
       })
-      const costUsd = responseCost(response.model, response.usage)
+      const costUsd = await responseCost(input.provider, response.model, response.usage)
       usage.calls += 1
       usage.inputTokens += response.usage.inputTokens
       usage.outputTokens += response.usage.outputTokens
@@ -532,7 +547,7 @@ export async function runRealEvaluation(input: RealEvaluationInput): Promise<Rea
   if (baselineReport && baselineReport.provenance.corpusSha256 !== sha256(input.corpus)) {
     throw new Error('Le rapport baseline utilise un contenu de corpus différent.')
   }
-  assertPreflight(normalized, cases, !baselineReport)
+  await assertPreflight(normalized, cases, !baselineReport)
 
   const usage = emptyUsage(cases.length, now())
   const baseline = baselineReport

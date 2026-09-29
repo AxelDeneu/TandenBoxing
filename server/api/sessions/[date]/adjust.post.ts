@@ -28,11 +28,11 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { anthropicApiKey } = useRuntimeConfig()
-  if (!anthropicApiKey) {
+  const { openrouterApiKey } = useRuntimeConfig()
+  if (!openrouterApiKey) {
     throw createError({
       statusCode: 500,
-      statusMessage: 'Clé API Anthropic manquante. Renseigne NUXT_ANTHROPIC_API_KEY.',
+      statusMessage: 'Clé API OpenRouter manquante. Renseigne NUXT_OPENROUTER_API_KEY.',
     })
   }
 
