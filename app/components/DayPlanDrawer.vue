@@ -12,6 +12,16 @@ const session = computed(() => props.day?.session ?? null)
 const plan = computed(() => props.day?.plan ?? null)
 const generationJob = computed(() => props.day?.generationJob ?? null)
 const date = computed(() => props.day?.date ?? '')
+const generationClock = ref(Date.now())
+const generationStatusDescription = computed(() => {
+  if (!generationJob.value) return ''
+  return [
+    generationProgressDescription(generationJob.value, generationClock.value),
+    generationPreviousAttemptDescription(generationJob.value),
+  ]
+    .filter(Boolean)
+    .join(' ')
+})
 
 const showReschedule = ref(false)
 const showRegen = ref(false)
@@ -54,6 +64,24 @@ const description = computed(() => {
 // Chaque ouverture (ou changement de jour) repart de l'état de consultation.
 watch([open, date], () => {
   editing.value = false
+})
+
+// Le tiroir converge lui aussi sans fermeture ni nouveau trafic utilisateur.
+let generationPollTimer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  generationPollTimer = setInterval(() => {
+    generationClock.value = Date.now()
+    if (
+      open.value &&
+      generationJob.value &&
+      ['queued', 'running', 'retry_scheduled'].includes(generationJob.value.status)
+    ) {
+      emit('changed')
+    }
+  }, 4000)
+})
+onBeforeUnmount(() => {
+  if (generationPollTimer) clearInterval(generationPollTimer)
 })
 
 function notifyError(e: any) {
@@ -194,11 +222,8 @@ async function deletePlan() {
               : 'Génération persistante en cours'
           "
           :description="
-            'Tentative ' +
-            generationJob.attemptCount +
-            '/' +
-            generationJob.maxAttempts +
-            '. Le traitement reprendra automatiquement après un redémarrage.'
+            generationStatusDescription ||
+            'Le traitement reprendra automatiquement après un redémarrage.'
           "
           :ui="{ icon: 'animate-spin' }"
         />
