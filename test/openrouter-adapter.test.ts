@@ -93,6 +93,19 @@ describe('adaptateur OpenRouter', () => {
     expect(result.costUsd).toBeCloseTo(0.00014725)
   })
 
+  it('transmet le signal d’annulation applicatif au SDK', async () => {
+    const controller = new AbortController()
+    const client = clientWith(response())
+
+    await generateStructuredOutput({ ...baseRequest, signal: controller.signal }, client as never)
+
+    expect(client.chat.send).toHaveBeenCalledWith(expect.anything(), {
+      timeoutMs: 1_000,
+      retries: { strategy: 'none' },
+      signal: controller.signal,
+    })
+  })
+
   it.each([
     [
       {

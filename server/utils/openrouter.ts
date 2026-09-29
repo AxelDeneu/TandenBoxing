@@ -154,6 +154,8 @@ export interface StructuredGenerationRequest {
   temperature?: number
   seed?: number
   requireZeroDataRetention?: boolean
+  /** Annulation applicative indépendante du timeout propre au SDK. */
+  signal?: AbortSignal
 }
 
 export interface StructuredGenerationResponse {
@@ -268,7 +270,11 @@ export async function generateStructuredOutput(
             stream: false,
           },
         },
-        { timeoutMs: request.timeoutMs, retries: { strategy: 'none' } },
+        {
+          timeoutMs: request.timeoutMs,
+          retries: { strategy: 'none' },
+          ...(request.signal ? { signal: request.signal } : {}),
+        },
       )) as ChatResult
       return parseStructuredResponse(response, request)
     } catch (error) {

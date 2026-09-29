@@ -15,17 +15,21 @@ import { isDateDismissed } from '../repositories/dismissed-date.repository'
 import {
   claimNextGenerationJob,
   completeGenerationJob,
-  createGenerationJob,
+  createGenerationJobWithResult,
   failGenerationJob,
   findGenerationJob,
   findLatestGenerationJob,
-  findNextGenerationDispatchAt,
+  findNextGenerationWakeAt,
+  hasGenerationJobLease,
   hasActiveGenerationJob,
+  invalidateClaimedGenerationJob,
   invalidateGenerationJob,
-  recoverExpiredGenerationJobs,
+  recoverExpiredGenerationJobLeases,
   requeueFailedGenerationJob,
+  renewGenerationJobLease,
   scheduleGenerationJobRetry,
   toPublicGenerationJob,
+  updateGenerationJobStage,
   type GenerationCompletion,
   type GenerationFailure,
 } from '../repositories/generation-job.repository'
@@ -40,11 +44,20 @@ import {
   generateDeterministicFallbackForDate,
   generateSessionForDateDetailed,
   GenerationExecutionError,
+  type GenerationExecutionControl,
+  type GenerationExecutionStageEvent,
   type GeneratedSessionResult,
 } from './generation.service'
+import { logGenerationJobEvent } from '../utils/generation-job-logger'
 
-const WORKER_ID = `generation-worker:${process.pid}:${randomUUID()}`
+const WORKER_ID = `generation-worker:${process.pid}:${randomUUID().slice(0, 8)}`
 const PREFETCH_SIZE = 2
+
+/** Budget global catalogue + génération + validation + éventuelle correction. */
+export const GENERATION_ATTEMPT_DEADLINE_MS = 5 * 60_000
+export const GENERATION_FALLBACK_DEADLINE_MS = 30_000
+export const GENERATION_LEASE_MS = 45_000
+export const GENERATION_LEASE_HEARTBEAT_MS = 15_000
 
 let workerRunning = false
 let wakeTimer: ReturnType<typeof setTimeout> | null = null
@@ -149,7 +162,7 @@ export function requestGenerationJob(
     regenerate: Boolean(options.regenerate),
     adjustment,
   })
-  let job = createGenerationJob({
+  const created = createGenerationJobWithResult({
     sessionDate: date,
     idempotencyKey: identity.idempotencyKey,
     contextHash: identity.contextHash,
@@ -158,6 +171,16 @@ export function requestGenerationJob(
     status: 'queued',
     nextAttemptAt: now,
     queuedAt: now,
+  })
+  let job = created.job
+  logGenerationJobEvent({
+    event: created.created ? 'enqueued' : 'deduplicated',
+    jobId: job.id,
+    date: job.sessionDate,
+    source: job.source,
+    attempt: job.attemptCount,
+    maxAttempts: job.maxAttempts,
+    status: job.status,
   })
   if (job.status === 'failed' && options.retryFailed) {
     job = requeueFailedGenerationJob(job.id, now)
@@ -207,8 +230,14 @@ function completion(result: GeneratedSessionResult, durationMs: number): Generat
 export interface GenerationWorkerDependencies {
   now: () => Date
   contextIsCurrent: (job: GenerationJob) => boolean
-  execute: (job: GenerationJob) => Promise<GeneratedSessionResult>
-  fallback: (job: GenerationJob) => Promise<GeneratedSessionResult>
+  execute: (
+    job: GenerationJob,
+    control: GenerationExecutionControl,
+  ) => Promise<GeneratedSessionResult>
+  fallback: (
+    job: GenerationJob,
+    control: GenerationExecutionControl,
+  ) => Promise<GeneratedSessionResult>
   canFallback: (job: GenerationJob) => boolean
   onInvalidated: (job: GenerationJob) => void
   onSucceeded: (job: GenerationJob, result: GeneratedSessionResult) => void
@@ -220,14 +249,18 @@ function productionWorkerDependencies(): GenerationWorkerDependencies {
     contextIsCurrent: (job) =>
       automaticGenerationAllowed(getSettings()) &&
       buildGenerationIdentity(job.sessionDate, job.request).contextHash === job.contextHash,
-    execute: (job) =>
+    execute: (job, control) =>
       generateSessionForDateDetailed(job.sessionDate, {
         ...job.request,
         contextHash: job.contextHash,
         source: job.source,
+        control,
       }),
-    fallback: async (job) =>
-      generateDeterministicFallbackForDate(job.sessionDate, { contextHash: job.contextHash }),
+    fallback: async (job, control) =>
+      generateDeterministicFallbackForDate(job.sessionDate, {
+        contextHash: job.contextHash,
+        control,
+      }),
     canFallback: (job) => !job.request.adjustment && !findSessionByDate(job.sessionDate),
     onInvalidated: (job) => {
       const session = findSessionByDate(job.sessionDate)
@@ -245,6 +278,132 @@ function productionWorkerDependencies(): GenerationWorkerDependencies {
   }
 }
 
+class GenerationLeaseLostError extends Error {
+  constructor() {
+    super('Le lease de génération n’appartient plus à ce worker.')
+    this.name = 'GenerationLeaseLostError'
+  }
+}
+
+function attemptDeadlineError(): GenerationExecutionError {
+  return new GenerationExecutionError(
+    'temporary',
+    'GENERATION_ATTEMPT_DEADLINE_EXCEEDED',
+    'La tentative a dépassé son budget maximal.',
+    'Une nouvelle tentative sera lancée automatiquement.',
+  )
+}
+
+function stageLogEvent(status: GenerationExecutionStageEvent['status']) {
+  if (status === 'started') return 'stage_started' as const
+  if (status === 'succeeded') return 'stage_succeeded' as const
+  return 'stage_failed' as const
+}
+
+function executionControl(
+  job: GenerationJob,
+  dependencies: GenerationWorkerDependencies,
+  controller: AbortController,
+): GenerationExecutionControl {
+  const assertActive = () => {
+    controller.signal.throwIfAborted()
+    if (!hasGenerationJobLease(job, dependencies.now())) throw new GenerationLeaseLostError()
+  }
+
+  return {
+    signal: controller.signal,
+    assertActive,
+    onStage: (event) => {
+      const now = dependencies.now()
+      if (
+        event.status === 'started' &&
+        !updateGenerationJobStage(job, event.stage, now, GENERATION_LEASE_MS)
+      ) {
+        throw new GenerationLeaseLostError()
+      }
+      if (event.status !== 'started') assertActive()
+      logGenerationJobEvent({
+        event: stageLogEvent(event.status),
+        jobId: job.id,
+        date: job.sessionDate,
+        source: job.source,
+        attempt: job.attemptCount,
+        maxAttempts: job.maxAttempts,
+        model: event.model,
+        stage: event.stage,
+        status: event.status,
+        durationMs: event.durationMs,
+        errorCode: event.errorCode,
+        workerId: WORKER_ID,
+      })
+    },
+  }
+}
+
+/** Watchdog applicatif et heartbeat de lease, tous deux indépendants du timeout du SDK. */
+async function runClaimedOperation<T>(
+  job: GenerationJob,
+  dependencies: GenerationWorkerDependencies,
+  timeoutMs: number,
+  operation: (control: GenerationExecutionControl) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController()
+  if (!renewGenerationJobLease(job, dependencies.now(), GENERATION_LEASE_MS)) {
+    throw new GenerationLeaseLostError()
+  }
+  let rejectLeaseLost!: (error: GenerationLeaseLostError) => void
+  const leaseLost = new Promise<never>((_resolve, reject) => {
+    rejectLeaseLost = reject
+  })
+  let deadlineTimer: ReturnType<typeof setTimeout> | null = null
+  const deadline = new Promise<never>((_resolve, reject) => {
+    deadlineTimer = setTimeout(() => {
+      const error = attemptDeadlineError()
+      reject(error)
+      controller.abort(error)
+    }, timeoutMs)
+  })
+
+  const heartbeat = setInterval(() => {
+    try {
+      if (renewGenerationJobLease(job, dependencies.now(), GENERATION_LEASE_MS)) return
+    } catch {
+      // Une erreur de renouvellement est traitée comme une perte de lease, sans journaliser l'erreur brute.
+    }
+    const error = new GenerationLeaseLostError()
+    rejectLeaseLost(error)
+    controller.abort(error)
+  }, GENERATION_LEASE_HEARTBEAT_MS)
+  const control = executionControl(job, dependencies, controller)
+
+  try {
+    return await Promise.race([operation(control), deadline, leaseLost])
+  } finally {
+    clearInterval(heartbeat)
+    if (deadlineTimer) clearTimeout(deadlineTimer)
+  }
+}
+
+async function runFallback(
+  job: GenerationJob,
+  dependencies: GenerationWorkerDependencies,
+): Promise<GeneratedSessionResult> {
+  logGenerationJobEvent({
+    event: 'fallback_started',
+    jobId: job.id,
+    date: job.sessionDate,
+    source: job.source,
+    attempt: job.attemptCount,
+    maxAttempts: job.maxAttempts,
+    stage: 'fallback',
+    status: 'running',
+    workerId: WORKER_ID,
+  })
+  return runClaimedOperation(job, dependencies, GENERATION_FALLBACK_DEADLINE_MS, (control) =>
+    dependencies.fallback(job, control),
+  )
+}
+
 /**
  * Traite un job déjà claimé. Les dépendances injectables rendent retries/backoff/fallback
  * testables avec une horloge fixe, sans `sleep` réel ni fournisseur externe.
@@ -252,8 +411,19 @@ function productionWorkerDependencies(): GenerationWorkerDependencies {
 export async function processClaimedGenerationJob(
   job: GenerationJob,
   dependencies: GenerationWorkerDependencies = productionWorkerDependencies(),
-): Promise<'succeeded' | 'retry_scheduled' | 'failed' | 'invalidated'> {
+): Promise<'succeeded' | 'retry_scheduled' | 'failed' | 'invalidated' | 'lease_lost'> {
   const startedAt = dependencies.now()
+
+  logGenerationJobEvent({
+    event: 'attempt_started',
+    jobId: job.id,
+    date: job.sessionDate,
+    source: job.source,
+    attempt: job.attemptCount,
+    maxAttempts: job.maxAttempts,
+    status: 'running',
+    workerId: WORKER_ID,
+  })
 
   const persisted = findSessionByDate(job.sessionDate)
   if (persisted?.generationContextHash === job.contextHash) {
@@ -271,16 +441,51 @@ export async function processClaimedGenerationJob(
       policyCorrectionCount: 0,
       policyCompliant: true,
     }
-    completeGenerationJob(job, {
-      ...metrics,
+    const completed = completeGenerationJob(
+      job,
+      {
+        ...metrics,
+        durationMs: 0,
+        estimatedCostUsd: 0,
+      },
+      undefined,
+      dependencies.now(),
+    )
+    if (!completed) return 'lease_lost'
+    logGenerationJobEvent({
+      event: 'succeeded',
+      jobId: job.id,
+      date: job.sessionDate,
+      source: job.source,
+      attempt: job.attemptCount,
+      maxAttempts: job.maxAttempts,
+      status: 'succeeded',
       durationMs: 0,
-      estimatedCostUsd: 0,
+      reuseKind: metrics.reuseKind,
+      fallbackUsed: metrics.fallbackUsed,
+      workerId: WORKER_ID,
     })
     return 'succeeded'
   }
 
   if (!dependencies.contextIsCurrent(job)) {
-    invalidateGenerationJob(job.id, 'Le profil, les préférences ou la politique ont changé.')
+    const invalidated = invalidateClaimedGenerationJob(
+      job,
+      'Le profil, les préférences ou la politique ont changé.',
+      dependencies.now(),
+    )
+    if (!invalidated) return 'lease_lost'
+    logGenerationJobEvent({
+      event: 'invalidated',
+      jobId: job.id,
+      date: job.sessionDate,
+      source: job.source,
+      attempt: job.attemptCount,
+      maxAttempts: job.maxAttempts,
+      status: 'invalidated',
+      errorCode: 'CONTEXT_INVALIDATED',
+      workerId: WORKER_ID,
+    })
     dependencies.onInvalidated(job)
     return 'invalidated'
   }
@@ -290,66 +495,196 @@ export async function processClaimedGenerationJob(
   if (job.attemptCount > job.maxAttempts) {
     if (dependencies.canFallback(job)) {
       try {
-        const result = await dependencies.fallback(job)
-        completeGenerationJob(job, completion(result, 0), {
-          kind: 'temporary',
-          code: 'WORKER_INTERRUPTED',
-          message: 'Le dernier essai a été interrompu avant la reprise.',
-          actionableMessage: 'Le fallback local a pris le relais.',
+        const result = await runFallback(job, dependencies)
+        const completed = completeGenerationJob(
+          job,
+          completion(result, 0),
+          {
+            kind: 'temporary',
+            code: 'WORKER_INTERRUPTED',
+            message: 'Le dernier essai a été interrompu avant la reprise.',
+            actionableMessage: 'Le fallback local a pris le relais.',
+          },
+          dependencies.now(),
+        )
+        if (!completed) return 'lease_lost'
+        logGenerationJobEvent({
+          event: 'succeeded',
+          jobId: job.id,
+          date: job.sessionDate,
+          source: job.source,
+          attempt: job.attemptCount,
+          maxAttempts: job.maxAttempts,
+          status: 'succeeded',
+          durationMs: 0,
+          reuseKind: result.metrics.reuseKind,
+          fallbackUsed: true,
+          workerId: WORKER_ID,
         })
         dependencies.onSucceeded(job, result)
         return 'succeeded'
       } catch (error) {
-        failGenerationJob(job, generationFailure(error), 0)
+        if (error instanceof GenerationLeaseLostError) return 'lease_lost'
+        const failure = generationFailure(error)
+        if (!failGenerationJob(job, failure, 0, dependencies.now())) return 'lease_lost'
+        logGenerationJobEvent({
+          event: 'failed',
+          jobId: job.id,
+          date: job.sessionDate,
+          source: job.source,
+          attempt: job.attemptCount,
+          maxAttempts: job.maxAttempts,
+          status: 'failed',
+          durationMs: 0,
+          errorCode: failure.code,
+          workerId: WORKER_ID,
+        })
         return 'failed'
       }
     }
-    failGenerationJob(
-      job,
-      {
-        kind: 'temporary',
-        code: 'RETRY_BUDGET_EXHAUSTED_AFTER_RESTART',
-        message: 'Le budget de tentatives était épuisé avant la reprise.',
-        actionableMessage: 'Relance explicitement la génération.',
-      },
-      0,
-    )
+    const failure = {
+      kind: 'temporary' as const,
+      code: 'RETRY_BUDGET_EXHAUSTED_AFTER_RESTART',
+      message: 'Le budget de tentatives était épuisé avant la reprise.',
+      actionableMessage: 'Relance explicitement la génération.',
+    }
+    if (!failGenerationJob(job, failure, 0, dependencies.now())) return 'lease_lost'
+    logGenerationJobEvent({
+      event: 'failed',
+      jobId: job.id,
+      date: job.sessionDate,
+      source: job.source,
+      attempt: job.attemptCount,
+      maxAttempts: job.maxAttempts,
+      status: 'failed',
+      durationMs: 0,
+      errorCode: failure.code,
+      workerId: WORKER_ID,
+    })
     return 'failed'
   }
 
   try {
-    const result = await dependencies.execute(job)
+    const result = await runClaimedOperation(
+      job,
+      dependencies,
+      GENERATION_ATTEMPT_DEADLINE_MS,
+      (control) => dependencies.execute(job, control),
+    )
     const durationMs = Math.max(0, dependencies.now().getTime() - startedAt.getTime())
-    completeGenerationJob(job, completion(result, durationMs))
+    if (
+      !completeGenerationJob(job, completion(result, durationMs), undefined, dependencies.now())
+    ) {
+      return 'lease_lost'
+    }
+    logGenerationJobEvent({
+      event: 'succeeded',
+      jobId: job.id,
+      date: job.sessionDate,
+      source: job.source,
+      attempt: job.attemptCount,
+      maxAttempts: job.maxAttempts,
+      status: 'succeeded',
+      durationMs,
+      reuseKind: result.metrics.reuseKind,
+      fallbackUsed: result.metrics.fallbackUsed,
+      workerId: WORKER_ID,
+    })
     dependencies.onSucceeded(job, result)
     return 'succeeded'
   } catch (error) {
+    if (error instanceof GenerationLeaseLostError) {
+      logGenerationJobEvent({
+        event: 'lease_lost',
+        jobId: job.id,
+        date: job.sessionDate,
+        source: job.source,
+        attempt: job.attemptCount,
+        maxAttempts: job.maxAttempts,
+        status: 'ignored',
+        workerId: WORKER_ID,
+      })
+      return 'lease_lost'
+    }
     const failure = generationFailure(error)
     const now = dependencies.now()
     const durationMs = Math.max(0, now.getTime() - startedAt.getTime())
     const retryable = failure.kind === 'temporary' && job.attemptCount < job.maxAttempts
     if (retryable) {
       const backoffMs = generationRetryDelayMs(job.attemptCount)
-      scheduleGenerationJobRetry(
+      const scheduled = scheduleGenerationJobRetry(
         job,
         failure,
         new Date(now.getTime() + backoffMs),
         backoffMs,
         durationMs,
+        now,
       )
+      if (!scheduled) return 'lease_lost'
+      logGenerationJobEvent({
+        event: 'retry_scheduled',
+        jobId: job.id,
+        date: job.sessionDate,
+        source: job.source,
+        attempt: job.attemptCount,
+        maxAttempts: job.maxAttempts,
+        status: 'retry_scheduled',
+        durationMs,
+        errorCode: failure.code,
+        retryDelayMs: backoffMs,
+        workerId: WORKER_ID,
+      })
       return 'retry_scheduled'
     }
 
     if (dependencies.canFallback(job)) {
       try {
-        const result = await dependencies.fallback(job)
+        const result = await runFallback(job, dependencies)
         const totalDurationMs = Math.max(0, dependencies.now().getTime() - startedAt.getTime())
-        completeGenerationJob(job, completion(result, totalDurationMs), failure)
+        if (
+          !completeGenerationJob(
+            job,
+            completion(result, totalDurationMs),
+            failure,
+            dependencies.now(),
+          )
+        ) {
+          return 'lease_lost'
+        }
+        logGenerationJobEvent({
+          event: 'succeeded',
+          jobId: job.id,
+          date: job.sessionDate,
+          source: job.source,
+          attempt: job.attemptCount,
+          maxAttempts: job.maxAttempts,
+          status: 'succeeded',
+          durationMs: totalDurationMs,
+          errorCode: failure.code,
+          reuseKind: result.metrics.reuseKind,
+          fallbackUsed: true,
+          workerId: WORKER_ID,
+        })
         dependencies.onSucceeded(job, result)
         return 'succeeded'
       } catch (fallbackError) {
+        if (fallbackError instanceof GenerationLeaseLostError) return 'lease_lost'
         const fallbackFailure = generationFailure(fallbackError)
-        failGenerationJob(job, fallbackFailure, durationMs)
+        if (!failGenerationJob(job, fallbackFailure, durationMs, dependencies.now())) {
+          return 'lease_lost'
+        }
+        logGenerationJobEvent({
+          event: 'failed',
+          jobId: job.id,
+          date: job.sessionDate,
+          source: job.source,
+          attempt: job.attemptCount,
+          maxAttempts: job.maxAttempts,
+          status: 'failed',
+          durationMs,
+          errorCode: fallbackFailure.code,
+          workerId: WORKER_ID,
+        })
         return 'failed'
       }
     }
@@ -361,7 +696,21 @@ export async function processClaimedGenerationJob(
           ? 'Les tentatives automatiques sont épuisées. Relance explicitement la génération.'
           : failure.actionableMessage,
     }
-    failGenerationJob(job, actionableFailure, durationMs)
+    if (!failGenerationJob(job, actionableFailure, durationMs, dependencies.now())) {
+      return 'lease_lost'
+    }
+    logGenerationJobEvent({
+      event: 'failed',
+      jobId: job.id,
+      date: job.sessionDate,
+      source: job.source,
+      attempt: job.attemptCount,
+      maxAttempts: job.maxAttempts,
+      status: 'failed',
+      durationMs,
+      errorCode: actionableFailure.code,
+      workerId: WORKER_ID,
+    })
     return 'failed'
   }
 }
@@ -370,21 +719,60 @@ export async function processNextGenerationJob(
   dependencies: GenerationWorkerDependencies = productionWorkerDependencies(),
 ): Promise<boolean> {
   const now = dependencies.now()
-  recoverExpiredGenerationJobs(now)
-  const job = claimNextGenerationJob(WORKER_ID, now)
+  for (const recovered of recoverExpiredGenerationJobLeases(now)) {
+    logGenerationJobEvent({
+      event: 'lease_recovered',
+      jobId: recovered.jobId,
+      date: recovered.date,
+      source: recovered.source,
+      attempt: recovered.attempt,
+      maxAttempts: recovered.maxAttempts,
+      stage: recovered.stage,
+      status: 'queued',
+      errorCode: 'WORKER_INTERRUPTED',
+      workerId: WORKER_ID,
+    })
+  }
+  const job = claimNextGenerationJob(WORKER_ID, now, GENERATION_LEASE_MS)
   if (!job) return false
+  logGenerationJobEvent({
+    event: 'claimed',
+    jobId: job.id,
+    date: job.sessionDate,
+    source: job.source,
+    attempt: job.attemptCount,
+    maxAttempts: job.maxAttempts,
+    status: 'running',
+    workerId: WORKER_ID,
+  })
   await processClaimedGenerationJob(job, dependencies)
   return true
 }
 
-function scheduleWorkerWake(): void {
-  if (wakeTimer) clearTimeout(wakeTimer)
-  const next = findNextGenerationDispatchAt()
+export interface GenerationWorkerWakeDependencies {
+  now: () => number
+  wake: () => void
+  setTimer: typeof setTimeout
+  clearTimer: typeof clearTimeout
+}
+
+/** Programme aussi bien un retry futur que la prochaine expiration de lease. */
+export function scheduleGenerationWorkerWake(
+  dependencies: GenerationWorkerWakeDependencies = {
+    now: Date.now,
+    wake: kickGenerationWorker,
+    setTimer: setTimeout,
+    clearTimer: clearTimeout,
+  },
+): void {
+  if (wakeTimer) dependencies.clearTimer(wakeTimer)
+  wakeTimer = null
+  const next = findNextGenerationWakeAt()
   if (!next) return
-  const delay = Math.max(0, Math.min(2_147_483_647, next.getTime() - Date.now()))
-  wakeTimer = setTimeout(() => {
+  const delay = Math.max(0, Math.min(2_147_483_647, next.getTime() - dependencies.now()))
+  wakeTimer = dependencies.setTimer(() => {
     wakeTimer = null
-    kickGenerationWorker()
+    dependencies.wake()
   }, delay)
 }
 
@@ -396,17 +784,39 @@ export function kickGenerationWorker(): void {
       while (await processNextGenerationJob()) {
         // Draine les jobs immédiatement disponibles ; les retries futurs ont leur propre réveil.
       }
-    } catch (error) {
-      console.error('[generation-job] Worker interrompu :', error)
+    } catch {
+      console.error(
+        '[generation-job] ' +
+          JSON.stringify({
+            event: 'worker_crashed',
+            timestamp: new Date().toISOString(),
+            errorCode: 'UNEXPECTED_WORKER_ERROR',
+            workerId: WORKER_ID,
+          }),
+      )
     } finally {
       workerRunning = false
-      scheduleWorkerWake()
+      scheduleGenerationWorkerWake()
     }
   })
 }
 
 export function resumeGenerationJobs(): void {
-  recoverExpiredGenerationJobs(new Date())
+  const now = new Date()
+  for (const recovered of recoverExpiredGenerationJobLeases(now)) {
+    logGenerationJobEvent({
+      event: 'lease_recovered',
+      jobId: recovered.jobId,
+      date: recovered.date,
+      source: recovered.source,
+      attempt: recovered.attempt,
+      maxAttempts: recovered.maxAttempts,
+      stage: recovered.stage,
+      status: 'queued',
+      errorCode: 'WORKER_INTERRUPTED',
+      workerId: WORKER_ID,
+    })
+  }
   invalidatePreparedSessions()
   kickGenerationWorker()
 }
@@ -469,6 +879,17 @@ export function invalidatePreparedSessions(): string[] {
           latest.id,
           'Séance anticipée invalidée par un changement de contexte.',
         )
+        logGenerationJobEvent({
+          event: 'invalidated',
+          jobId: latest.id,
+          date: latest.sessionDate,
+          source: latest.source,
+          attempt: latest.attemptCount,
+          maxAttempts: latest.maxAttempts,
+          status: 'invalidated',
+          errorCode: 'CONTEXT_INVALIDATED',
+          workerId: WORKER_ID,
+        })
       }
     },
     shouldRegenerate: (session) =>
