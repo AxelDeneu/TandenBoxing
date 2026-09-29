@@ -1,4 +1,3 @@
-import type AnthropicSDK from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import {
   FOCUS_OPTIONS,
@@ -16,7 +15,7 @@ import type { SkillProgressionSnapshot } from '../../shared/skill-mastery'
  */
 
 /** Sortie structurée imposée au modèle. */
-const recoSchema = z.object({
+export const recoSchema = z.object({
   recommandations: z
     .array(
       z.object({
@@ -29,13 +28,13 @@ const recoSchema = z.object({
     .max(4),
 })
 
-const RECO_TOOL = {
+export const RECO_OUTPUT = {
   name: 'recommander_focus',
   description:
     'Renvoie 3 à 4 propositions de prochaine séance (catégorie + focus), chacune justifiée en une phrase courte.',
-  input_schema: z.toJSONSchema(recoSchema, {
+  schema: z.toJSONSchema(recoSchema, {
     target: 'draft-2020-12',
-  }) as AnthropicSDK.Tool.InputSchema,
+  }) as Record<string, unknown>,
 }
 
 const RECO_SYSTEM_PROMPT = `Tu es un coach de boxe anglaise qui suit un élève débutant s'entraînant seul à la maison, avec uniquement le matériel déclaré dans son profil. Tu tutoies l'élève et écris exclusivement en français.
@@ -53,7 +52,7 @@ RÈGLES
 - "reason" : UNE phrase courte, personnalisée, appuyée sur un état ou un fait concret fourni.
 - Ne présente jamais comme acquise une compétence en consolidation ou bloquée par un prérequis.
 
-Réponds EXCLUSIVEMENT en appelant l'outil "recommander_focus".`
+Réponds EXCLUSIVEMENT avec un objet JSON conforme au schéma strict fourni.`
 
 /** Cache mémoire best-effort, par date (les recos ne bougent pas tant que l'historique ne bouge pas). */
 const recoCache = new Map<string, FocusRecommendation[]>()
@@ -152,28 +151,22 @@ async function askModel(
     `Pistes calculées automatiquement (conserve exactement les couples et l'ordre) :`,
     ...baseline.map((r) => `- ${r.category} / ${r.focus} : ${r.reason}`),
     ``,
-    `Reformule seulement leurs raisons et appelle l'outil "recommander_focus".`,
+    `Reformule seulement leurs raisons dans l'objet JSON demandé.`,
   ].join('\n')
 
-  const client = useAnthropic()
-  const response = await client.messages.create(
-    {
-      model: settingsRow.aiModel,
-      max_tokens: 1500,
-      system: RECO_SYSTEM_PROMPT,
-      tools: [RECO_TOOL],
-      tool_choice: { type: 'tool', name: RECO_TOOL.name },
-      messages: [{ role: 'user', content: userPrompt }],
-    },
-    { timeout: 30_000, maxRetries: 1 },
-  )
+  const catalogModel = await requireAvailableOpenRouterModel(settingsRow.aiModel)
+  const response = await generateStructuredOutput({
+    model: settingsRow.aiModel,
+    maxOutputTokens: 1_500,
+    systemPrompt: RECO_SYSTEM_PROMPT,
+    userPrompt,
+    outputSchema: RECO_OUTPUT,
+    pricing: catalogModel.pricing,
+    timeoutMs: 30_000,
+    maxRetries: 1,
+  })
 
-  const toolUse = response.content.find(
-    (block): block is AnthropicSDK.ToolUseBlock => block.type === 'tool_use',
-  )
-  if (!toolUse) throw new Error("Le modèle n'a pas renvoyé de recommandations.")
-
-  const parsed = recoSchema.parse(toolUse.input)
+  const parsed = recoSchema.parse(response.output)
   // La personnalisation ne peut ni contourner un prérequis, ni remplacer le planner.
   const modelReasons = new Map(
     parsed.recommandations.map((recommendation) => [
@@ -201,15 +194,18 @@ export async function getRecommendations(date: string): Promise<FocusRecommendat
   const progression = getSkillProgression(date)
   const baseline = recommendFocuses({ today: date, history, skillProgression: progression })
 
-  const { anthropicApiKey } = useRuntimeConfig()
-  if (!anthropicApiKey) return baseline
+  const { openrouterApiKey } = useRuntimeConfig()
+  if (!openrouterApiKey) return baseline
 
   try {
     const recos = await askModel(date, history, baseline, progression)
     recoCache.set(date, recos)
     return recos
   } catch (error) {
-    console.error('[reco] Recommandation IA échouée, repli heuristique :', error)
+    console.error(
+      '[reco] Recommandation IA échouée, repli heuristique :',
+      classifyOpenRouterError(error).code,
+    )
     return baseline
   }
 }

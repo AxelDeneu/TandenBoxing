@@ -12,6 +12,7 @@ import {
   type SessionStatus,
 } from '../../shared/session-lifecycle'
 import type { NewExerciseFeedback, Session, SessionPlan } from '../database/schema'
+import { normalizeOpenRouterModelSlug } from '../../shared/openrouter-models'
 
 function loadSessionOrThrow(date: string): Session {
   const row = findSessionByDate(date)
@@ -289,7 +290,7 @@ export async function replaceExerciseInSession(
       goal: profile.goal,
       equipment: profile.equipment,
     },
-    row.aiModel,
+    normalizeOpenRouterModelSlug(row.aiModel),
   )
   block.exercises[exerciseIndex] = replacement
   const updated = persistStructure(date, structure)

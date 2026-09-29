@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { estimateCostUsd } from '../../shared/ai-pricing'
 import {
   GENERATION_CONTEXT_VERSION,
   generationRetryDelayMs,
@@ -201,8 +200,7 @@ function generationFailure(error: unknown): GenerationFailure {
 }
 
 function completion(result: GeneratedSessionResult, durationMs: number): GenerationCompletion {
-  const model = result.session.aiModel
-  const estimatedCostUsd = result.metrics.modelCalls ? estimateCostUsd(model, result.metrics) : 0
+  const estimatedCostUsd = result.metrics.modelCalls ? result.metrics.costUsd : 0
   return { ...result.metrics, durationMs, estimatedCostUsd }
 }
 
@@ -265,6 +263,7 @@ export async function processClaimedGenerationJob(
       outputTokens: 0,
       cacheCreationTokens: 0,
       cacheReadTokens: 0,
+      costUsd: 0,
       providerLatencyMs: 0,
       reuseKind: persisted.reusedFromSessionId ? 'session' : 'none',
       reusedBlockCount: 0,

@@ -4,6 +4,7 @@ import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import * as schema from '../database/schema'
+import { DEFAULT_AI_MODEL, normalizeOpenRouterModelSlug } from '../../shared/openrouter-models'
 
 // Re-export tables + types so they're auto-imported across the server.
 export * from '../database/schema'
@@ -30,7 +31,12 @@ export function useDatabase(): BetterSQLite3Database<typeof schema> {
  */
 export function ensureSingletons(db: BetterSQLite3Database<typeof schema> = useDatabase()) {
   const s = db.select().from(schema.settings).where(eq(schema.settings.id, 1)).get()
-  if (!s) db.insert(schema.settings).values({ id: 1 }).run()
+  if (!s) {
+    const configuredModel = String(useRuntimeConfig().aiModel ?? DEFAULT_AI_MODEL)
+    db.insert(schema.settings)
+      .values({ id: 1, aiModel: normalizeOpenRouterModelSlug(configuredModel) })
+      .run()
+  }
 
   const p = db.select().from(schema.profile).where(eq(schema.profile.id, 1)).get()
   if (!p) db.insert(schema.profile).values({ id: 1 }).run()

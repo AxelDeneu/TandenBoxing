@@ -13,7 +13,7 @@ const schema = z
     generationTime: generationTimeSchema.optional(),
     targetDurationMin: z.number().int().min(10).max(120).optional(),
     timezone: timezoneSchema.optional(),
-    aiModel: z.string().min(1).max(64).optional(),
+    aiModel: z.string().trim().min(1).max(200).optional(),
     weightTrackingEnabled: z.boolean().optional(),
     authEnabled: z.boolean().optional(),
   })

@@ -6,7 +6,7 @@ import { promisify } from 'node:util'
 import { GENERATOR_VERSIONS } from '../../shared/generator-version'
 import sessionPolicyAdapter from '../adapters/session-policy'
 import { SYNTHETIC_CORPUS } from '../fixtures/corpus'
-import { createAnthropicRealProvider } from './anthropic-provider'
+import { createOpenRouterRealProvider } from './openrouter-provider'
 import { formatRealReportJson, formatRealReportMarkdown } from './report'
 import { runRealEvaluation } from './runner'
 import type { RealEvaluationBudget, RealEvaluationReport, RealGenerationProvider } from './types'
@@ -243,7 +243,7 @@ export function parseRealEvaluationArgs(args: readonly string[]): CliOptions {
 }
 
 async function loadProvider(path: string | undefined): Promise<RealGenerationProvider> {
-  if (!path) return createAnthropicRealProvider(process.env.NUXT_ANTHROPIC_API_KEY ?? '')
+  if (!path) return createOpenRouterRealProvider(process.env.NUXT_OPENROUTER_API_KEY ?? '')
   const loaded = (await import(pathToFileURL(resolve(path)).href)) as Record<string, unknown>
   const provider = loaded.realGenerationProvider ?? loaded.default
   if (!provider || typeof provider !== 'object' || !('generate' in provider)) {

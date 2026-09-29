@@ -55,7 +55,7 @@ describe('corpus synthétique du générateur', () => {
     )
   })
 
-  it('ne dépend ni de la base locale, ni de secrets, ni du client Anthropic', async () => {
+  it('ne dépend ni de la base locale, ni de secrets, ni du client OpenRouter', async () => {
     const fixtureFiles = ['corpus.ts', 'reference-candidate.ts'].map((name) =>
       fileURLToPath(new URL(`../evaluation/fixtures/${name}`, import.meta.url)),
     )
@@ -65,7 +65,7 @@ describe('corpus synthétique du générateur', () => {
 
     expect(sources).not.toContain('data/tanden.db')
     expect(sources).not.toContain('process.env')
-    expect(sources).not.toContain('ANTHROPIC_API_KEY')
-    expect(sources).not.toContain('server/utils/anthropic')
+    expect(sources).not.toContain('OPENROUTER_API_KEY')
+    expect(sources).not.toContain('server/utils/openrouter')
   })
 })

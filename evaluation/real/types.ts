@@ -1,5 +1,6 @@
 import type { WorkoutSession } from '../../shared/session-schema'
 import type { GeneratorVersions } from '../../shared/generator-version'
+import type { ModelPricing } from '../../shared/ai-pricing'
 
 export const REAL_METRIC_IDS = [
   'structuralValidity',
@@ -47,6 +48,8 @@ export interface RealProviderUsage {
   outputTokens: number
   cacheCreationTokens: number
   cacheReadTokens: number
+  /** Coût réel renvoyé par OpenRouter, si disponible. */
+  costUsd?: number | null
 }
 
 export interface RealProviderRequest {
@@ -72,6 +75,7 @@ export interface RealGenerationProvider {
     seed: boolean
     temperature: boolean
   }
+  getModelPricing(model: string): Promise<ModelPricing | null>
   generate(request: RealProviderRequest): Promise<RealProviderResponse>
 }
 

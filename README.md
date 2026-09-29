@@ -1,6 +1,6 @@
 # 🥊 Tanden Boxing
 
-Coach de boxe à domicile. Chaque matin, l'IA (Claude Opus 4.8) prépare une séance compatible
+Coach de boxe à domicile. Chaque matin, un modèle compatible choisi via OpenRouter prépare une séance
 avec ton objectif, ton matériel, ton historique et tes ressentis. Explications détaillées,
 timer à intervalles avec audio, et suivi de progression.
 
@@ -25,20 +25,20 @@ timer à intervalles avec audio, et suivi de progression.
 
 ## Stack
 
-|                 |                                              |
-| --------------- | -------------------------------------------- |
-| Framework       | Nuxt 4 (Vue 3, Nitro) + Nuxt UI              |
-| Base de données | SQLite (better-sqlite3) + Drizzle ORM        |
-| IA              | `@anthropic-ai/sdk` (sortie structurée, Zod) |
-| Cron            | croner (plugin Nitro)                        |
-| PWA             | `@vite-pwa/nuxt`                             |
-| Graphiques      | Chart.js                                     |
+|                 |                                                         |
+| --------------- | ------------------------------------------------------- |
+| Framework       | Nuxt 4 (Vue 3, Nitro) + Nuxt UI                         |
+| Base de données | SQLite (better-sqlite3) + Drizzle ORM                   |
+| IA              | `@openrouter/sdk` (JSON Schema strict + validation Zod) |
+| Cron            | croner (plugin Nitro)                                   |
+| PWA             | `@vite-pwa/nuxt`                                        |
+| Graphiques      | Chart.js                                                |
 
 ## Démarrage (dev)
 
 ```bash
 npm install
-cp .env.example .env        # puis renseigne NUXT_ANTHROPIC_API_KEY
+cp .env.example .env        # puis renseigne NUXT_OPENROUTER_API_KEY
 npm run db:migrate          # crée la base (sinon appliquée au 1er démarrage)
 npm run dev                 # http://localhost:3000
 ```
@@ -102,6 +102,10 @@ leur première sauvegarde explicite dans les réglages.
 
 Le fonctionnement de la file persistante, des clés de contexte, de la réutilisation, du fallback et
 des métriques est détaillé dans [docs/generation-durable.md](./docs/generation-durable.md).
+Le catalogue compatible est chargé côté serveur depuis OpenRouter et mis en cache 15 minutes. Les
+appels exigent les paramètres structurés, refusent la collecte de données et utilisent uniquement
+des endpoints Zero Data Retention par défaut (`NUXT_OPENROUTER_REQUIRE_ZDR=1`). La clé ne fait jamais
+partie de la configuration publique ni du DTO envoyé au navigateur.
 Le protocole de comparaison réelle et la boucle de télémétrie sont détaillés dans
 [docs/evaluation-reelle.md](./docs/evaluation-reelle.md).
 La cadence d'audit et la procédure d'exception temporaire sont détaillées dans
