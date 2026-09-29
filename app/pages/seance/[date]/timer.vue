@@ -71,11 +71,13 @@ function skipCheckIn(): void {
     </div>
 
     <div
-      v-else-if="error || !data"
+      v-else-if="error || !data || session?.status === 'skipped'"
       class="fixed inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center"
     >
       <UIcon name="i-lucide-triangle-alert" class="size-12 text-amber-400" />
-      <p>Séance introuvable.</p>
+      <p>
+        {{ session?.status === 'skipped' ? 'Cette séance est clôturée.' : 'Séance introuvable.' }}
+      </p>
       <UButton to="/" color="neutral" variant="soft">Retour à l'accueil</UButton>
     </div>
 
@@ -91,6 +93,8 @@ function skipCheckIn(): void {
       v-else-if="session"
       :session="session.structure"
       :date="date"
+      :replay="session.status === 'completed'"
+      :started="session.status === 'in_progress'"
       :initial-safety-notice="safetyNotice"
     />
   </div>

@@ -4,6 +4,7 @@ import {
   type PreferenceReasonCode,
 } from '~~/shared/exercise-preferences'
 import type { ApiSession } from '~/utils/session'
+import { flushPendingSessionLifecycle } from '~/utils/session-lifecycle-sync'
 
 useHead({ title: 'Noter la séance' })
 
@@ -11,7 +12,39 @@ const route = useRoute()
 const date = route.params.date as string
 const toast = useToast()
 
-const { data } = await useFetch<ApiSession>(`/api/sessions/${date}`)
+interface FeedbackSessionResponse extends ApiSession {
+  feedback: {
+    overallDifficulty: number | null
+    energyLevel: number | null
+    enjoyment: number | null
+    soreness: string[]
+    comment: string | null
+    actualDurationSec: number | null
+    skippedBlockCount: number | null
+  } | null
+  exerciseFeedback: {
+    blockIndex: number
+    exerciseIndex: number
+    difficulty: number | null
+  }[]
+}
+
+const { data, refresh } = await useFetch<FeedbackSessionResponse>(`/api/sessions/${date}`)
+
+async function syncClosure(): Promise<void> {
+  try {
+    await flushPendingSessionLifecycle(date)
+    await refresh()
+  } catch {
+    // La clôture reste locale hors ligne ; le formulaire s'activera à la reconnexion.
+  }
+}
+
+onMounted(() => {
+  void syncClosure()
+  window.addEventListener('online', syncClosure)
+})
+onBeforeUnmount(() => window.removeEventListener('online', syncClosure))
 
 const SORENESS_ZONES = [
   'Épaules',
@@ -36,27 +69,35 @@ const timedMinutes =
 const rawSkippedBlockCount = Number(route.query.blocsIgnores)
 const skippedBlockCount = Number.isFinite(rawSkippedBlockCount)
   ? Math.max(0, Math.min(100, rawSkippedBlockCount))
-  : null
+  : (data.value?.feedback?.skippedBlockCount ?? data.value?.skippedBlockCount ?? null)
+const existingFeedback = data.value?.feedback
+const recordedSeconds = existingFeedback?.actualDurationSec ?? data.value?.actualDurationSec ?? null
 
 const form = reactive({
-  overallDifficulty: null as number | null,
-  energyLevel: null as number | null,
-  enjoyment: null as number | null,
-  soreness: [] as string[],
-  comment: '',
-  actualDurationMin: timedMinutes,
+  overallDifficulty: existingFeedback?.overallDifficulty ?? null,
+  energyLevel: existingFeedback?.energyLevel ?? null,
+  enjoyment: existingFeedback?.enjoyment ?? null,
+  soreness: existingFeedback?.soreness ?? [],
+  comment: existingFeedback?.comment ?? '',
+  actualDurationMin:
+    timedMinutes ?? (recordedSeconds === null ? null : Math.round(recordedSeconds / 60)),
 })
 
 const exercises = ref(
   (data.value?.structure.blocks ?? []).flatMap((b, bi) =>
-    b.exercises.map((e, ei) => ({
-      blockIndex: bi,
-      exerciseIndex: ei,
-      name: e.name,
-      difficulty: null as number | null,
-      preferenceAction: null as 'liked' | 'disliked' | null,
-      preferenceReasonCode: undefined as PreferenceReasonCode | undefined,
-    })),
+    b.exercises.map((e, ei) => {
+      const existing = data.value?.exerciseFeedback.find(
+        (feedback) => feedback.blockIndex === bi && feedback.exerciseIndex === ei,
+      )
+      return {
+        blockIndex: bi,
+        exerciseIndex: ei,
+        name: e.name,
+        difficulty: existing?.difficulty ?? null,
+        preferenceAction: null as 'liked' | 'disliked' | null,
+        preferenceReasonCode: undefined as PreferenceReasonCode | undefined,
+      }
+    }),
   ),
 )
 
@@ -148,7 +189,7 @@ async function submit() {
       icon="i-lucide-triangle-alert"
     />
 
-    <template v-else>
+    <template v-else-if="data.status === 'completed'">
       <!-- Ressenti global -->
       <section class="space-y-4">
         <h2 class="text-sm font-bold uppercase tracking-wide text-muted">Ressenti global</h2>
@@ -236,15 +277,15 @@ async function submit() {
       <!-- Divers -->
       <section class="space-y-4">
         <div>
-          <label class="mb-1.5 block text-sm font-medium">Durée réelle (min, optionnel)</label>
+          <label class="mb-1.5 block text-sm font-medium">Durée réelle (min)</label>
           <UInput
             v-model.number="form.actualDurationMin"
             type="number"
-            placeholder="ex : 43"
             icon="i-lucide-clock"
+            disabled
           />
           <p v-if="timedMinutes" class="mt-1.5 text-xs text-muted">
-            Mesurée par le timer, pauses déduites. Ajuste si besoin.
+            Mesurée par le timer, pauses déduites.
           </p>
         </div>
         <div>
@@ -266,8 +307,17 @@ async function submit() {
         :loading="saving"
         @click="submit"
       >
-        Enregistrer et terminer
+        Enregistrer le feedback
       </UButton>
     </template>
+
+    <UAlert
+      v-else
+      color="warning"
+      variant="soft"
+      title="Clôture en attente"
+      description="Le feedback sera disponible dès que la fin de séance aura été synchronisée."
+      icon="i-lucide-wifi-off"
+    />
   </div>
 </template>

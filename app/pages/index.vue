@@ -242,21 +242,25 @@ function closeSwapDialog(): void {
       <UDropdownMenu
         v-if="session"
         :items="[
-          {
-            label: 'Ajuster la séance',
-            icon: 'i-lucide-wand-sparkles',
-            onSelect: () => (showAdjust = true),
-          },
-          {
-            label: 'Régénérer la séance',
-            icon: 'i-lucide-refresh-cw',
-            onSelect: () => (showRegen = true),
-          },
-          {
-            label: 'Reporter à une autre date',
-            icon: 'i-lucide-calendar-clock',
-            onSelect: () => (showReschedule = true),
-          },
+          ...(session.status === 'generated'
+            ? [
+                {
+                  label: 'Ajuster la séance',
+                  icon: 'i-lucide-wand-sparkles',
+                  onSelect: () => (showAdjust = true),
+                },
+                {
+                  label: 'Régénérer la séance',
+                  icon: 'i-lucide-refresh-cw',
+                  onSelect: () => (showRegen = true),
+                },
+                {
+                  label: 'Reporter à une autre date',
+                  icon: 'i-lucide-calendar-clock',
+                  onSelect: () => (showReschedule = true),
+                },
+              ]
+            : []),
           {
             label: 'Supprimer la séance',
             icon: 'i-lucide-trash-2',
@@ -397,7 +401,7 @@ function closeSwapDialog(): void {
             :key="bi"
             :block="block"
             :block-index="bi"
-            :editable="session.status !== 'completed'"
+            :editable="session.status === 'generated'"
             :busy-key="busyKey"
             @replace="(ei) => requestSwap(bi, ei, 'replace')"
             @remove="(ei) => requestSwap(bi, ei, 'remove')"
@@ -405,13 +409,20 @@ function closeSwapDialog(): void {
         </div>
 
         <UButton
+          v-if="session.status !== 'skipped'"
           block
           size="xl"
           color="primary"
           icon="i-lucide-play"
           :to="`/seance/${session.date}/timer`"
         >
-          {{ session.status === 'completed' ? 'Refaire la séance' : 'Démarrer la séance' }}
+          {{
+            session.status === 'completed'
+              ? 'Refaire la séance'
+              : session.status === 'in_progress'
+                ? 'Reprendre la séance'
+                : 'Démarrer la séance'
+          }}
         </UButton>
       </template>
 

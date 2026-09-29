@@ -2,6 +2,7 @@
 import type { WorkoutSession } from '~~/shared/session-schema'
 import type { SkillId } from '~~/shared/curriculum'
 import type { PublicGenerationJob } from '~~/shared/generation-jobs'
+import type { SessionStatus } from '~~/shared/session-lifecycle'
 
 export type {
   Exercise,
@@ -21,7 +22,7 @@ export {
 } from '~~/shared/session-schema'
 export type { FocusRecommendation } from '~~/shared/recommendations'
 
-export type SessionStatus = 'planned' | 'generated' | 'in_progress' | 'completed' | 'skipped'
+export type { SessionStatus } from '~~/shared/session-lifecycle'
 
 export interface ApiSession {
   id: number
@@ -45,6 +46,7 @@ export interface ApiSession {
   startedAt: number | null
   completedAt: number | null
   actualDurationSec: number | null
+  skippedBlockCount: number | null
 }
 
 export interface TodayResponse {

@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, isNull } from 'drizzle-orm'
+import type { SessionStatus } from '../../shared/session-lifecycle'
 import type { NewSession, Session } from '../database/schema'
 
 /** Accès aux séances. */
@@ -41,7 +42,10 @@ export function listPreparedSessions(dateFrom: string): Session[] {
     .all()
 }
 
-/** Insère ou remplace la séance d'une date (réinitialise l'état d'exécution en cas de régénération). */
+/**
+ * Insère ou remplace une proposition encore modifiable. Le filtre protège aussi contre un job de
+ * génération qui se terminerait après le démarrage ou la clôture de la séance.
+ */
 export function upsertSessionByDate(values: NewSession): Session {
   const db = useDatabase()
   const now = new Date()
@@ -52,13 +56,33 @@ export function upsertSessionByDate(values: NewSession): Session {
       set: {
         ...values,
         updatedAt: now,
-        startedAt: null,
-        completedAt: null,
-        actualDurationSec: null,
       },
+      setWhere: eq(sessions.status, 'generated'),
     })
     .run()
   return db.select().from(sessions).where(eq(sessions.date, values.date)).get()!
+}
+
+/** Compare-and-set atomique utilisé par la machine d'état de séance. */
+export function transitionSessionByDate(
+  date: string,
+  fromStatus: SessionStatus,
+  patch: Partial<NewSession>,
+): { changed: boolean; session: Session | undefined } {
+  const db = useDatabase()
+  const result = db
+    .update(sessions)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(and(eq(sessions.date, date), eq(sessions.status, fromStatus)))
+    .run()
+  return {
+    changed: result.changes > 0,
+    session: db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.date, (patch.date as string | undefined) ?? date))
+      .get(),
+  }
 }
 
 export function updateSessionByDate(date: string, patch: Partial<NewSession>): Session {

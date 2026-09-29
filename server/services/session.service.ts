@@ -6,6 +6,11 @@ import {
 } from '../../shared/session-schema'
 import type { PreferenceAction, PreferenceReasonCode } from '../../shared/exercise-preferences'
 import type { SkillId } from '../../shared/curriculum'
+import {
+  canRewriteGeneratedSession,
+  resolveSessionTransition,
+  type SessionStatus,
+} from '../../shared/session-lifecycle'
 import type { NewExerciseFeedback, Session, SessionPlan } from '../database/schema'
 
 function loadSessionOrThrow(date: string): Session {
@@ -14,20 +19,81 @@ function loadSessionOrThrow(date: string): Session {
   return row
 }
 
+function statusOf(row: Session): SessionStatus {
+  return row.status as SessionStatus
+}
+
+function lifecycleConflict(statusMessage: string): never {
+  throw createError({ statusCode: 409, statusMessage })
+}
+
+function assertRewritable(row: Session, statusMessage: string): void {
+  if (!canRewriteGeneratedSession(row.status)) lifecycleConflict(statusMessage)
+}
+
 /** Réécrit la structure d'une séance et recalcule sa durée estimée. */
 function persistStructure(date: string, structure: WorkoutSession): Session {
   const estimatedDurationMin = Math.max(1, Math.round(estimateSessionSeconds(structure) / 60))
-  return updateSessionByDate(date, { structure, estimatedDurationMin })
+  const updated = transitionSessionByDate(date, 'generated', { structure, estimatedDurationMin })
+  if (!updated.changed || !updated.session) {
+    lifecycleConflict('Une séance démarrée ou clôturée ne peut plus être modifiée.')
+  }
+  return updated.session
 }
 
-/** Marque la séance comme démarrée. */
+/** Marque la séance comme démarrée via un compare-and-set idempotent. */
 export function startSession(date: string): Session {
   const row = loadSessionOrThrow(date)
-  if (row.status === 'completed') return row
-  return updateSessionByDate(date, {
-    status: 'in_progress',
-    startedAt: row.startedAt ?? new Date(),
+  const outcome = resolveSessionTransition(statusOf(row), 'start')
+  if (outcome.kind === 'idempotent') return row
+  if (outcome.kind === 'rejected') {
+    lifecycleConflict('Cette séance clôturée ne peut pas être démarrée.')
+  }
+
+  const transitioned = transitionSessionByDate(date, 'generated', {
+    status: outcome.status,
+    startedAt: new Date(),
+  }).session
+  if (!transitioned) throw createError({ statusCode: 404, statusMessage: 'Séance introuvable.' })
+
+  const concurrentOutcome = resolveSessionTransition(statusOf(transitioned), 'start')
+  if (concurrentOutcome.kind === 'rejected') {
+    lifecycleConflict('Cette séance clôturée ne peut pas être démarrée.')
+  }
+  return transitioned
+}
+
+export interface FinishSessionPayload {
+  actualDurationSec: number
+  skippedBlockCount: number
+}
+
+/** Clôt la séance indépendamment du feedback ; la première clôture gagne. */
+export function finishSession(date: string, payload: FinishSessionPayload): Session {
+  const row = loadSessionOrThrow(date)
+  const outcome = resolveSessionTransition(statusOf(row), 'finish')
+  if (outcome.kind === 'idempotent') return row
+  if (outcome.kind === 'rejected') {
+    lifecycleConflict('Seule une séance démarrée peut être clôturée.')
+  }
+
+  const transitioned = transitionSessionByDate(date, 'in_progress', {
+    status: outcome.status,
+    completedAt: new Date(),
+    actualDurationSec: payload.actualDurationSec,
+    skippedBlockCount: payload.skippedBlockCount,
   })
+  if (!transitioned.session) {
+    throw createError({ statusCode: 404, statusMessage: 'Séance introuvable.' })
+  }
+  if (!transitioned.changed && transitioned.session.status !== 'completed') {
+    lifecycleConflict('Cette séance ne peut plus être clôturée.')
+  }
+  if (transitioned.changed) {
+    clearRecommendationCache()
+    invalidatePreparedSessions()
+  }
+  return transitioned.session
 }
 
 export interface PlanPayload {
@@ -53,6 +119,10 @@ export function planSession(
   date: string,
   payload: PlanPayload,
 ): { plan: SessionPlan; generating: boolean } {
+  const existing = findSessionByDate(date)
+  if (payload.generateNow && existing && !canRewriteGeneratedSession(existing.status)) {
+    lifecycleConflict('Une séance démarrée ou clôturée ne peut pas être régénérée.')
+  }
   const plan = upsertPlan({
     date,
     category: payload.category ?? null,
@@ -82,6 +152,9 @@ export function rescheduleSession(
   if (!row && !plan) {
     throw createError({ statusCode: 404, statusMessage: 'Séance introuvable.' })
   }
+  if (row && !canRewriteGeneratedSession(row.status)) {
+    lifecycleConflict('Une séance démarrée ou clôturée ne peut pas être reportée.')
+  }
   if (newDate === date) return { session: row ?? null, plan: plan ?? null }
 
   if (findSessionByDate(newDate)) {
@@ -96,6 +169,17 @@ export function rescheduleSession(
       statusCode: 409,
       statusMessage: 'Une séance est déjà planifiée à cette date.',
     })
+  }
+
+  const movedSession = row
+    ? transitionSessionByDate(date, 'generated', {
+        date: newDate,
+        generationSource: 'model',
+        generationContextHash: null,
+      })
+    : null
+  if (movedSession && (!movedSession.changed || !movedSession.session)) {
+    lifecycleConflict('Cette séance a démarré entre-temps et ne peut plus être reportée.')
   }
 
   // La date d'origine reste volontairement vide : pas de régénération automatique.
@@ -120,13 +204,7 @@ export function rescheduleSession(
   }
 
   const result = {
-    session: row
-      ? updateSessionByDate(date, {
-          date: newDate,
-          generationSource: 'model',
-          generationContextHash: null,
-        })
-      : null,
+    session: movedSession?.session ?? null,
     plan: planFinal,
   }
   invalidatePreparedSessions()
@@ -152,6 +230,7 @@ export function removeExerciseFromSession(
   reasonCode?: PreferenceReasonCode | null,
 ): Session {
   const row = loadSessionOrThrow(date)
+  assertRewritable(row, 'Une séance démarrée ou clôturée ne peut plus être modifiée.')
   const structure = structuredClone(row.structure)
   const block = structure.blocks[blockIndex]
   if (!block || !block.exercises[exerciseIndex]) {
@@ -183,6 +262,7 @@ export async function replaceExerciseInSession(
   reasonCode?: PreferenceReasonCode | null,
 ): Promise<Session> {
   const row = loadSessionOrThrow(date)
+  assertRewritable(row, 'Une séance démarrée ou clôturée ne peut plus être modifiée.')
   const structure = structuredClone(row.structure)
   const block = structure.blocks[blockIndex]
   const current = block?.exercises[exerciseIndex]
@@ -247,6 +327,23 @@ export interface FeedbackPayload {
  */
 export function skipSession(date: string, reason: string | null): Session {
   const row = loadSessionOrThrow(date)
+  const outcome = resolveSessionTransition(statusOf(row), 'skip')
+  if (outcome.kind === 'idempotent') return row
+  if (outcome.kind === 'rejected') {
+    lifecycleConflict('Une séance terminée ne peut pas être marquée comme sautée.')
+  }
+
+  const transitioned = transitionSessionByDate(date, statusOf(row), {
+    status: outcome.status,
+    completedAt: null,
+    actualDurationSec: null,
+    skippedBlockCount: null,
+  })
+  if (!transitioned.changed || !transitioned.session) {
+    lifecycleConflict(
+      'Cette séance a changé entre-temps et ne peut plus être marquée comme sautée.',
+    )
+  }
 
   upsertSessionFeedback(row.id, {
     completed: false,
@@ -261,30 +358,26 @@ export function skipSession(date: string, reason: string | null): Session {
 
   // Le statut change : les recommandations en cache sont périmées.
   clearRecommendationCache()
-
-  const updated = updateSessionByDate(date, {
-    status: 'skipped',
-    startedAt: null,
-    completedAt: null,
-    actualDurationSec: null,
-  })
   invalidatePreparedSessions()
-  return updated
+  return transitioned.session
 }
 
-/** Enregistre le feedback d'une séance et la clôt. */
+/** Enregistre ou remplace le feedback d'une séance déjà clôturée, sans rejouer sa transition. */
 export function submitFeedback(date: string, payload: FeedbackPayload): Session {
   const row = loadSessionOrThrow(date)
+  if (row.status !== 'completed' || !payload.completed) {
+    lifecycleConflict("Le feedback ne peut être enregistré qu'après la clôture de la séance.")
+  }
 
   upsertSessionFeedback(row.id, {
-    completed: payload.completed,
+    completed: true,
     overallDifficulty: payload.overallDifficulty,
     energyLevel: payload.energyLevel,
     soreness: payload.soreness,
     enjoyment: payload.enjoyment,
     comment: payload.comment,
-    actualDurationSec: payload.actualDurationSec,
-    skippedBlockCount: payload.skippedBlockCount,
+    actualDurationSec: row.actualDurationSec ?? payload.actualDurationSec,
+    skippedBlockCount: row.skippedBlockCount ?? payload.skippedBlockCount,
   })
 
   const feedbackRows: NewExerciseFeedback[] = payload.exercises.map((e) => ({
@@ -312,14 +405,8 @@ export function submitFeedback(date: string, payload: FeedbackPayload): Session 
     )
   }
 
-  // L'historique vient de changer : les recommandations en cache sont périmées.
-  if (payload.completed) clearRecommendationCache()
-
-  const updated = updateSessionByDate(date, {
-    status: payload.completed ? 'completed' : row.status,
-    completedAt: payload.completed ? new Date() : row.completedAt,
-    actualDurationSec: payload.actualDurationSec ?? row.actualDurationSec,
-  })
+  // Le feedback enrichit l'historique sans modifier la source de vérité de la clôture.
+  clearRecommendationCache()
   invalidatePreparedSessions()
-  return updated
+  return row
 }

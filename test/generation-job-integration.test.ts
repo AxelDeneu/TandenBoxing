@@ -84,6 +84,7 @@ function createTables(): void {
       'generation_context_hash TEXT, fallback_used INTEGER DEFAULT false NOT NULL,',
       'reused_from_session_id INTEGER, generation_context TEXT, generated_at INTEGER,',
       'started_at INTEGER, completed_at INTEGER, actual_duration_sec INTEGER,',
+      'skipped_block_count INTEGER,',
       'created_at INTEGER DEFAULT (unixepoch()) NOT NULL, updated_at INTEGER DEFAULT (unixepoch()) NOT NULL);',
     ].join(' '),
   )

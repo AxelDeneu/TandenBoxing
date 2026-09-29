@@ -281,12 +281,12 @@ async function deletePlan() {
               Voir la séance
             </UButton>
 
-            <!-- Une séance terminée ne se relance pas depuis le planning : récap + détail suffisent. -->
-            <template v-if="session.status !== 'completed'">
+            <template v-if="session.status === 'generated' || session.status === 'in_progress'">
               <UButton block color="primary" icon="i-lucide-play" :to="`/seance/${date}/timer`">
                 {{ session.status === 'in_progress' ? 'Reprendre' : 'Démarrer' }}
               </UButton>
               <UButton
+                v-if="session.status === 'generated'"
                 block
                 color="neutral"
                 variant="ghost"
@@ -296,6 +296,7 @@ async function deletePlan() {
                 Reporter
               </UButton>
               <UButton
+                v-if="session.status === 'generated'"
                 block
                 color="neutral"
                 variant="ghost"
