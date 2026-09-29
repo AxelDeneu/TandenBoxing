@@ -18,6 +18,7 @@ import {
   emptyGenerationRunMetrics,
   type GenerationJobSource,
   type GenerationRunMetrics,
+  type GenerationStage,
 } from '../../shared/generation-jobs'
 import { buildSessionPrompt } from '../../shared/generation-prompt'
 import { canRewriteGeneratedSession } from '../../shared/session-lifecycle'
@@ -213,8 +214,11 @@ function recordUsage(
       costUsd: response.costUsd,
       ...usage,
     })
-  } catch (error) {
-    console.error('[generation] Enregistrement de la conso échoué :', error)
+  } catch {
+    console.error(
+      '[generation] ' +
+        JSON.stringify({ event: 'usage_recording_failed', code: 'USAGE_RECORDING_FAILED' }),
+    )
   }
   return usage
 }
@@ -359,12 +363,15 @@ function logGenerationViolations(
   violations: readonly GeneratedSessionViolation[],
 ): void {
   // Journal strictement structuré : codes, chemins et valeurs bornées, jamais les champs libres.
-  console.error('[generation-policy]', {
-    event: 'session_validation_failed',
-    date,
-    attempt,
-    violations,
-  })
+  console.info(
+    '[generation-policy] ' +
+      JSON.stringify({
+        event: 'session_validation_failed',
+        date,
+        attempt,
+        violations: violations.map(({ code, path }) => ({ code, path })),
+      }),
+  )
 }
 
 /**
@@ -551,6 +558,21 @@ export interface GenerateSessionOptions {
   adjustment?: string | null
   contextHash?: string
   source?: GenerationJobSource
+  control?: GenerationExecutionControl
+}
+
+export interface GenerationExecutionStageEvent {
+  stage: GenerationStage
+  status: 'started' | 'succeeded' | 'failed'
+  model?: string
+  durationMs?: number
+  errorCode?: string
+}
+
+export interface GenerationExecutionControl {
+  signal?: AbortSignal
+  assertActive?: () => void
+  onStage?: (event: GenerationExecutionStageEvent) => void
 }
 
 export interface GeneratedSessionResult {
@@ -706,6 +728,62 @@ function preparePartialCandidate(
   }
 }
 
+function ensureGenerationExecutionActive(control?: GenerationExecutionControl): void {
+  control?.signal?.throwIfAborted()
+  control?.assertActive?.()
+}
+
+function generationStageErrorCode(error: unknown): string {
+  if (error instanceof GenerationExecutionError) return error.code
+  return classifyOpenRouterError(error).code
+}
+
+function beginGenerationStage(
+  control: GenerationExecutionControl | undefined,
+  stage: GenerationStage,
+  model?: string,
+): number {
+  ensureGenerationExecutionActive(control)
+  control?.onStage?.({ stage, status: 'started', ...(model ? { model } : {}) })
+  return Date.now()
+}
+
+function finishGenerationStage(
+  control: GenerationExecutionControl | undefined,
+  stage: GenerationStage,
+  status: 'succeeded' | 'failed',
+  startedAt: number,
+  options: { model?: string; errorCode?: string } = {},
+): void {
+  if (status === 'succeeded') ensureGenerationExecutionActive(control)
+  control?.onStage?.({
+    stage,
+    status,
+    durationMs: Math.max(0, Date.now() - startedAt),
+    ...options,
+  })
+}
+
+function persistWithExecutionFence<T>(
+  control: GenerationExecutionControl | undefined,
+  persist: () => T,
+  model?: string,
+): T {
+  const startedAt = beginGenerationStage(control, 'persistence', model)
+  try {
+    ensureGenerationExecutionActive(control)
+    const result = persist()
+    finishGenerationStage(control, 'persistence', 'succeeded', startedAt, { model })
+    return result
+  } catch (error) {
+    finishGenerationStage(control, 'persistence', 'failed', startedAt, {
+      model,
+      errorCode: generationStageErrorCode(error),
+    })
+    throw error
+  }
+}
+
 /**
  * Génère ou réutilise une séance avec des métriques complètes. Le SDK ne fait aucun retry
  * caché : le job persistant reste l'unique pilote du nombre d'essais et du backoff.
@@ -729,6 +807,7 @@ export async function generateSessionForDateDetailed(
     )
   }
   if (existing && !options.regenerate && !adjustment) {
+    ensureGenerationExecutionActive(options.control)
     return { session: existing, metrics: emptyGenerationRunMetrics() }
   }
 
@@ -745,17 +824,22 @@ export async function generateSessionForDateDetailed(
       metrics.reusedBlockCount = reusable.structure.blocks.length
       metrics.policyCompliant = true
       return {
-        session: persistResolvedSession(
-          date,
-          structuredClone(reusable.structure),
-          context,
-          settingsRow,
-          {
-            source: 'reused',
-            contextHash: options.contextHash,
-            reusedFromSessionId: reusable.id,
-            aiModel: reusable.aiModel,
-          },
+        session: persistWithExecutionFence(
+          options.control,
+          () =>
+            persistResolvedSession(
+              date,
+              structuredClone(reusable.structure),
+              context,
+              settingsRow,
+              {
+                source: 'reused',
+                contextHash: options.contextHash,
+                reusedFromSessionId: reusable.id,
+                aiModel: reusable.aiModel,
+              },
+            ),
+          reusable.aiModel,
         ),
         metrics,
       }
@@ -800,14 +884,23 @@ export async function generateSessionForDateDetailed(
   }
 
   let catalogModel: Awaited<ReturnType<typeof requireAvailableOpenRouterModel>>
+  const catalogStartedAt = beginGenerationStage(options.control, 'catalogue', settingsRow.aiModel)
   try {
     catalogModel = await requireAvailableOpenRouterModel(settingsRow.aiModel)
+    finishGenerationStage(options.control, 'catalogue', 'succeeded', catalogStartedAt, {
+      model: settingsRow.aiModel,
+    })
   } catch (error) {
-    throw providerFailure(error)
+    const failure = providerFailure(error)
+    finishGenerationStage(options.control, 'catalogue', 'failed', catalogStartedAt, {
+      model: settingsRow.aiModel,
+      errorCode: failure.code,
+    })
+    throw failure
   }
   const selectedOutput = partial ? PARTIAL_SESSION_OUTPUT : SESSION_OUTPUT
   let response: StructuredGenerationResponse
-  const providerStartedAt = Date.now()
+  const providerStartedAt = beginGenerationStage(options.control, 'generation', settingsRow.aiModel)
   try {
     response = await generateStructuredOutput({
       model: settingsRow.aiModel,
@@ -818,10 +911,17 @@ export async function generateSessionForDateDetailed(
       pricing: catalogModel.pricing,
       timeoutMs: 120_000,
       maxRetries: 0,
+      signal: options.control?.signal,
+    })
+    finishGenerationStage(options.control, 'generation', 'succeeded', providerStartedAt, {
+      model: response.model,
     })
   } catch (error) {
     const classified = classifyOpenRouterError(error)
-    console.error('[generation] Appel OpenRouter échoué :', classified.code)
+    finishGenerationStage(options.control, 'generation', 'failed', providerStartedAt, {
+      model: settingsRow.aiModel,
+      errorCode: classified.code,
+    })
     throw providerFailure(classified)
   }
   addResponseUsage(
@@ -838,6 +938,7 @@ export async function generateSessionForDateDetailed(
   let resolvedModel = response.model
 
   let session: WorkoutSession
+  let validationStartedAt = beginGenerationStage(options.control, 'validation', resolvedModel)
   try {
     session = await resolveGeneratedSession(initialCandidate, {
       policy: {
@@ -849,7 +950,13 @@ export async function generateSessionForDateDetailed(
         availableEquipment: context.prescription.personalization.equipment,
         prescribedBlockBudgets: context.prescription.blockBudgets,
       },
-      onInvalid: (attempt, violations) => logGenerationViolations(date, attempt, violations),
+      onInvalid: (attempt, violations) => {
+        logGenerationViolations(date, attempt, violations)
+        finishGenerationStage(options.control, 'validation', 'failed', validationStartedAt, {
+          model: resolvedModel,
+          errorCode: 'MODEL_OUTPUT_INVALID',
+        })
+      },
       correct: async (candidate, violations) => {
         metrics.policyCorrectionCount += 1
         const correctionPrompt = [
@@ -881,7 +988,11 @@ export async function generateSessionForDateDetailed(
         ].join('\n')
 
         let correctionResponse: StructuredGenerationResponse
-        const correctionStartedAt = Date.now()
+        const correctionStartedAt = beginGenerationStage(
+          options.control,
+          'correction',
+          settingsRow.aiModel,
+        )
         try {
           correctionResponse = await generateStructuredOutput({
             model: settingsRow.aiModel,
@@ -892,10 +1003,17 @@ export async function generateSessionForDateDetailed(
             pricing: catalogModel.pricing,
             timeoutMs: 120_000,
             maxRetries: 0,
+            signal: options.control?.signal,
+          })
+          finishGenerationStage(options.control, 'correction', 'succeeded', correctionStartedAt, {
+            model: correctionResponse.model,
           })
         } catch (error) {
           const classified = classifyOpenRouterError(error)
-          console.error('[generation] Correction OpenRouter échouée :', classified.code)
+          finishGenerationStage(options.control, 'correction', 'failed', correctionStartedAt, {
+            model: settingsRow.aiModel,
+            errorCode: classified.code,
+          })
           throw providerFailure(classified)
         }
         addResponseUsage(
@@ -906,8 +1024,12 @@ export async function generateSessionForDateDetailed(
           Date.now() - correctionStartedAt,
         )
         resolvedModel = correctionResponse.model
+        validationStartedAt = beginGenerationStage(options.control, 'validation', resolvedModel)
         return correctionResponse.output
       },
+    })
+    finishGenerationStage(options.control, 'validation', 'succeeded', validationStartedAt, {
+      model: resolvedModel,
     })
   } catch (error) {
     if (error instanceof GeneratedSessionValidationError) {
@@ -925,11 +1047,16 @@ export async function generateSessionForDateDetailed(
   metrics.policyCompliant = true
 
   return {
-    session: persistResolvedSession(date, session, context, settingsRow, {
-      source: options.source === 'prefetch' ? 'prefetch' : 'model',
-      contextHash: options.contextHash,
-      aiModel: resolvedModel,
-    }),
+    session: persistWithExecutionFence(
+      options.control,
+      () =>
+        persistResolvedSession(date, session, context, settingsRow, {
+          source: options.source === 'prefetch' ? 'prefetch' : 'model',
+          contextHash: options.contextHash,
+          aiModel: resolvedModel,
+        }),
+      resolvedModel,
+    ),
     metrics,
   }
 }
@@ -944,9 +1071,13 @@ export async function generateSessionForDate(
 /** Fallback sans réseau, appelé une seule fois lorsque la politique de retry est épuisée. */
 export function generateDeterministicFallbackForDate(
   date: string,
-  options: Pick<GenerateSessionOptions, 'contextHash'> = {},
+  options: Pick<GenerateSessionOptions, 'contextHash' | 'control'> = {},
 ): GeneratedSessionResult {
+  const fallbackStartedAt = beginGenerationStage(options.control, 'fallback')
   if (findSessionByDate(date)) {
+    finishGenerationStage(options.control, 'fallback', 'failed', fallbackStartedAt, {
+      errorCode: 'FALLBACK_WOULD_OVERWRITE_SESSION',
+    })
     throw new GenerationExecutionError(
       'permanent',
       'FALLBACK_WOULD_OVERWRITE_SESSION',
@@ -960,6 +1091,9 @@ export function generateDeterministicFallbackForDate(
   try {
     built = buildDeterministicFallbackSession(context, reusableBlocks)
   } catch (error) {
+    finishGenerationStage(options.control, 'fallback', 'failed', fallbackStartedAt, {
+      errorCode: 'FALLBACK_POLICY_REJECTED',
+    })
     throw new GenerationExecutionError(
       'permanent',
       'FALLBACK_POLICY_REJECTED',
@@ -973,13 +1107,19 @@ export function generateDeterministicFallbackForDate(
   metrics.policyCompliant = true
   metrics.reusedBlockCount = built.reusedBlockCount
   metrics.reuseKind = built.reusedBlockCount ? 'blocks' : 'none'
+  finishGenerationStage(options.control, 'fallback', 'succeeded', fallbackStartedAt)
   return {
-    session: persistResolvedSession(date, built.session, context, settingsRow, {
-      source: 'fallback',
-      contextHash: options.contextHash,
-      fallbackUsed: true,
-      aiModel: 'deterministic-local/v1',
-    }),
+    session: persistWithExecutionFence(
+      options.control,
+      () =>
+        persistResolvedSession(date, built.session, context, settingsRow, {
+          source: 'fallback',
+          contextHash: options.contextHash,
+          fallbackUsed: true,
+          aiModel: 'deterministic-local/v1',
+        }),
+      'deterministic-local/v1',
+    ),
     metrics,
   }
 }
@@ -1041,7 +1181,13 @@ export async function generateReplacementExercise(
 
   const parsed = exerciseSchema.safeParse(response.output)
   if (!parsed.success) {
-    console.error('[generation] Exercice de remplacement invalide :', parsed.error.issues)
+    console.error(
+      '[generation] ' +
+        JSON.stringify({
+          event: 'replacement_validation_failed',
+          issues: parsed.error.issues.map(({ code, path }) => ({ code, path })),
+        }),
+    )
     throw createError({
       statusCode: 502,
       statusMessage: "L'exercice proposé est invalide. Réessaie.",

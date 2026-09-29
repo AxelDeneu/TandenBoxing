@@ -55,6 +55,16 @@ const ADJUST_SUGGESTIONS = [
 
 const session = computed(() => data.value?.session ?? null)
 const generationJob = computed(() => data.value?.generationJob ?? null)
+const generationClock = ref(Date.now())
+const generationStatusDescription = computed(() => {
+  if (!generationJob.value) return ''
+  return [
+    generationProgressDescription(generationJob.value, generationClock.value),
+    generationPreviousAttemptDescription(generationJob.value),
+  ]
+    .filter(Boolean)
+    .join(' ')
+})
 const totalSeconds = computed(() =>
   session.value ? estimateSessionSeconds(session.value.structure) : 0,
 )
@@ -78,6 +88,7 @@ function notifyError(e: any, title = 'Échec') {
 let pollTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
   pollTimer = setInterval(() => {
+    generationClock.value = Date.now()
     if (data.value?.generating) refresh()
   }, 4000)
 })
@@ -320,11 +331,7 @@ function closeSwapDialog(): void {
               : 'Régénération en cours…'
           "
           :description="
-            'Tentative ' +
-            (generationJob?.attemptCount ?? 0) +
-            '/' +
-            (generationJob?.maxAttempts ?? 3) +
-            '. Ta séance va se mettre à jour dès que possible.'
+            generationStatusDescription || 'Ta séance va se mettre à jour dès que possible.'
           "
           :ui="{ icon: 'animate-spin' }"
         />
@@ -433,13 +440,7 @@ function closeSwapDialog(): void {
           <div>
             <h2 class="text-lg font-semibold">Séance en préparation…</h2>
             <p class="text-sm text-muted">
-              Tentative {{ generationJob?.attemptCount ?? 0 }}/{{ generationJob?.maxAttempts ?? 3 }}
-              ·
-              {{
-                generationJob?.status === 'retry_scheduled'
-                  ? 'Nouvel essai programmé avec backoff.'
-                  : 'Le job durable est en cours de traitement.'
-              }}
+              {{ generationStatusDescription }}
             </p>
           </div>
         </div>

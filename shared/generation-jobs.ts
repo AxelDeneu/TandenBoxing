@@ -14,6 +14,17 @@ export type GenerationJobSource = 'automatic' | 'user' | 'prefetch'
 export type GenerationErrorKind = 'temporary' | 'permanent'
 export type GenerationReuseKind = 'none' | 'session' | 'blocks'
 
+export const GENERATION_STAGES = [
+  'catalogue',
+  'generation',
+  'validation',
+  'correction',
+  'fallback',
+  'persistence',
+] as const
+
+export type GenerationStage = (typeof GENERATION_STAGES)[number]
+
 export interface GenerationJobRequest {
   regenerate: boolean
   adjustment: string | null
@@ -55,6 +66,22 @@ export interface PublicGenerationJob {
   createdAt: number
   startedAt: number | null
   completedAt: number | null
+  /** Essai possédant actuellement le lease. Les détails du lease restent strictement privés. */
+  currentAttempt: {
+    number: number
+    startedAt: number
+    stage: GenerationStage | null
+    stageStartedAt: number | null
+  } | null
+  /** Dernier essai clôturé, distinct de l'étape et de l'essai en cours. */
+  lastAttempt: {
+    number: number
+    status: string
+    errorKind: GenerationErrorKind | null
+    errorCode: string | null
+    errorMessage: string | null
+    completedAt: number
+  } | null
 }
 
 export function isActiveGenerationStatus(status: GenerationJobStatus): boolean {

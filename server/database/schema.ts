@@ -22,6 +22,7 @@ import type {
   GenerationJobRequest,
   GenerationJobSource,
   GenerationJobStatus,
+  GenerationStage,
   GenerationReuseKind,
 } from '../../shared/generation-jobs'
 import type { WorkoutSession } from '../../shared/session-schema'
@@ -356,7 +357,11 @@ export const generationJobs = sqliteTable(
     maxAttempts: integer('max_attempts').notNull().default(3),
     nextAttemptAt: integer('next_attempt_at', { mode: 'timestamp' }).notNull(),
     leaseOwner: text('lease_owner'),
+    leaseToken: text('lease_token'),
     leaseExpiresAt: integer('lease_expires_at', { mode: 'timestamp' }),
+    attemptStartedAt: integer('attempt_started_at', { mode: 'timestamp' }),
+    currentStage: text('current_stage').$type<GenerationStage>(),
+    stageStartedAt: integer('stage_started_at', { mode: 'timestamp' }),
     lastErrorKind: text('last_error_kind').$type<GenerationErrorKind>(),
     lastErrorCode: text('last_error_code'),
     lastErrorMessage: text('last_error_message'),
@@ -386,6 +391,7 @@ export const generationJobs = sqliteTable(
     uniqueIndex('generation_jobs_idempotency_key_unique').on(table.idempotencyKey),
     index('generation_jobs_session_date_idx').on(table.sessionDate),
     index('generation_jobs_dispatch_idx').on(table.status, table.nextAttemptAt),
+    index('generation_jobs_lease_expiry_idx').on(table.status, table.leaseExpiresAt),
   ],
 )
 
@@ -398,6 +404,7 @@ export const generationJobAttempts = sqliteTable(
       .notNull()
       .references(() => generationJobs.id, { onDelete: 'cascade' }),
     attemptNumber: integer('attempt_number').notNull(),
+    leaseToken: text('lease_token'),
     status: text('status').notNull().default('running'),
     errorKind: text('error_kind').$type<GenerationErrorKind>(),
     errorCode: text('error_code'),
