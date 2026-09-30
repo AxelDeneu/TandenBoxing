@@ -44,21 +44,21 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@iconify-json/lucide": "^1.2.115",
-    "@nuxt/eslint": "^1.16.0",
-    "@types/better-sqlite3": "^7.6.13",
+    "@iconify-json/lucide": "^1.2.137",
+    "@nuxt/eslint": "^1.17.0",
+    "@types/better-sqlite3": "^9.6.0",
     "@vite-pwa/nuxt": "^1.1.1",
     "@vitejs/plugin-vue": "6.0.9",
     "@vue/server-renderer": "3.5.43",
     "@vue/test-utils": "^2.5.1",
-    "drizzle-kit": "^0.31.10",
-    "eslint": "^10.6.0",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "happy-dom": "^20.14.5",
-    "prettier": "^3.9.4",
-    "sharp": "^0.35.3",
-    "tsx": "^4.22.4",
-    "vitest": "^4.1.9",
-    "vue-tsc": "^3.3.6"
+    "prettier": "^3.9.9",
+    "sharp": "^0.35.4",
+    "tsx": "^4.23.15",
+    "vitest": "^5.0.2",
+    "vue-tsc": "^3.3.11"
   }
 }
