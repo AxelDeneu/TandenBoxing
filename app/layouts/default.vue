@@ -1,6 +1,6 @@
 <template>
-  <!-- Mobile : colonne unique + BottomNav. Desktop (≥ lg) : SideNav + contenu élargi. -->
   <div class="flex min-h-dvh w-full flex-col lg:flex-row">
+    <!-- Mobile : colonne unique + BottomNav. Desktop (≥ lg) : SideNav + contenu élargi. -->
     <a
       href="#main-content"
       class="sr-only fixed left-3 top-3 z-50 rounded-lg bg-default px-4 py-2 font-medium focus:not-sr-only focus:outline-2 focus:outline-primary"
